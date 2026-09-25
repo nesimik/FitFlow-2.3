@@ -11,7 +11,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.fitflowpro3.kgryzq"
+    applicationId = "com.nesimi.fitflow3.1"
     minSdk = 24
     targetSdk = 36
     versionCode = 3
