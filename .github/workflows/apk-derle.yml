@@ -34,6 +34,7 @@ jobs:
           DIR=$(dirname "$SETTINGS")
           echo "Proje klasörü: $DIR"
           cd "$DIR"
+          [ -f .env.example ] || echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env.example
           gradle assembleDebug --stacktrace
 
       - name: APK'yı yükle
