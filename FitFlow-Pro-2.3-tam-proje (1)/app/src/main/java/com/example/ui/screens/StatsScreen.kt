@@ -890,6 +890,15 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
                 }
             }
         }
+        item {
+            Text(
+                "Tüm rekorlar →",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.fit.accent,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clickable { vm.setStatsTab(3) }.padding(vertical = 8.dp)
+            )
+        }
     }
 }
 
@@ -924,15 +933,6 @@ private fun LiftStandardCard(lift: LiftStandard, nav: NavHostController) {
                 "${lift.nextLevel} seviyesine ${(lift.nextLevelWeight - lift.e1rm).kg()} kaldı",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.fit.muted
-            )
-        }
-        item {
-            Text(
-                "Tüm rekorlar →",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.fit.accent,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().clickable { vm.setStatsTab(3) }.padding(vertical = 8.dp)
             )
         }
     }
