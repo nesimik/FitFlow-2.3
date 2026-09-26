@@ -1,8 +1,0 @@
-{
-  "name": "FitFlow Pro3",
-  "description": "Set bazlı kayıt, progresif yüklenme önerileri, kas grubu denge analizi, kişisel rekor takibi ve gelişim grafikleriyle kapsamlı antrenman takip uygulaması.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
