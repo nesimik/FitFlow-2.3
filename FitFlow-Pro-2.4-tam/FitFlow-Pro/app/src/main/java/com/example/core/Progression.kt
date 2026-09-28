@@ -40,6 +40,73 @@ data class LoadingProfile(
     }.coerceAtLeast(0f)
 }
 
+/* --------------------------- Tekrar merdiveni -------------------------------
+ * Hareket türüne göre haftalık "basamak" ilerlemesi. Her basamakta setler birer tekrar
+ * artan hedeflerle yapılır (ör. 6-7-8). Geçen seansın tüm hedefleri tutulduysa bir üst
+ * basamağa çıkılır; son basamak tamamlanınca ağırlık artar ve ilk basamağa dönülür.
+ *
+ *   Vücut ağırlığı (dips, barfiks): 4-5-6 → 5-6-7 → 6-7-8 → 7-8-9 → ağırlıklıya geç
+ *   Ana bileşik (squat, bench, deadlift, row, OHP): 6-7-8 → … → 9-10-11
+ *   Yardımcı bileşik (dambıl/makine pres, çekişler, leg press, lunge): 8-9-10 → … → 11-12-13
+ *   İzole (curl, raise, fly, extension, leg curl): 11-12-13 → … → 19-20-21
+ * --------------------------------------------------------------------------- */
+
+enum class RepScheme(val label: String, val base: Int, val steps: Int, val rangeLo: Int, val rangeHi: Int) {
+    BODYWEIGHT("Dips · Barfiks", 4, 4, 5, 8),
+    COMPOUND("Ana bileşik", 6, 4, 6, 10),
+    SEMI("Yardımcı bileşik", 8, 4, 8, 12),
+    ISOLATION("İzole", 11, 9, 12, 20);
+
+    val lastStep: Int get() = steps - 1
+
+    /** [step] basamağının set hedefleri: ilk set taban, son set taban + 2 (ör. 6-7-8). */
+    fun targets(step: Int, sets: Int): List<Int> {
+        val n = sets.coerceAtLeast(1)
+        return List(n) { i -> base + step + if (n <= 1) 0 else Math.round(i * 2f / (n - 1)) }
+    }
+
+    companion object {
+        private fun fold(t: String) = t.lowercase(java.util.Locale("tr")).replace('ı', 'i').replace('İ', 'i')
+
+        /**
+         * Hareketin merdiven türü. Süreli / mesafeli hareketler, kardiyo ve (dips-barfiks
+         * dışındaki) serbest vücut ağırlığı hareketleri için null → klasik çift progresyon.
+         */
+        fun classify(name: String, muscleGroup: String, equipment: String, trackingType: String): RepScheme? {
+            if (trackingType == "duration" || trackingType == "distance") return null
+            if (muscleGroup == Muscles.CARDIO) return null
+            val n = fold(name)
+            fun has(vararg k: String) = k.any { n.contains(it) }
+
+            // Destekli/kolay varyasyonlar yardımcı bileşik sayılır
+            if (has("avustralya", "inverted")) return if (trackingType == "reps") null else SEMI
+            // Dips ve barfiks ailesi (ağırlıklı versiyonları dahil)
+            if ((has("dips", "dip ") && !has("bench dip")) || has("barfiks", "pull-up", "pull up", "pullup", "chin-up", "chin up", "muscle-up", "muscle up"))
+                return BODYWEIGHT
+            // Diğer vücut ağırlığı hareketleri (şınav, mekik, leg raise…) merdivene girmez
+            if (trackingType == "reps") return null
+
+            // İzole
+            if (has(
+                    "fly", "crossover", "pec deck", "butterfly", "curl", "extension", "pushdown", "kickback",
+                    "raise", "face pull", "reverse pec", "straight arm", "shrug", "abduction", "adduction",
+                    "rotation", "wrist", "crunch", "woodchopper", "pallof", "skull", "tate press", "pull apart",
+                    "rear delt", "pullover"
+                )
+            ) return ISOLATION
+
+            // Yardımcı bileşik: barbell olsa bile daha hafif çalışılan varyasyonlar
+            if (has("upright", "jm press", "landmine")) return SEMI
+
+            // Ana bileşik: serbest bar / smith ile büyük hareketler
+            val eq = equipment.trim()
+            if (eq == "Barbell" || has("smith", "t-bar")) return COMPOUND
+
+            return SEMI
+        }
+    }
+}
+
 /** Geçmiş bir seansta bu hareketin tek bir çalışma seti. */
 data class LoggedSet(val weight: Float, val reps: Int, val rpe: Float = 0f)
 
@@ -102,8 +169,13 @@ object ProgressionEngine {
         repMax: Int,
         kind: LoadKind,
         profile: LoadingProfile,
-        deload: Boolean = false
+        deload: Boolean = false,
+        /** Verilirse tekrar merdiveni kullanılır; program aralığı yerine türün aralığı geçerlidir. */
+        scheme: RepScheme? = null,
+        /** Hareket adı (ağırlıklı versiyon önerisinde kullanılır). */
+        exerciseName: String = ""
     ): Prescription {
+        if (scheme != null) return prescribeLadder(history, targetSets, scheme, kind, profile, deload, exerciseName)
         val lo = repMin.coerceAtLeast(1)
         val hi = repMax.coerceAtLeast(lo)
         val setCount = targetSets.coerceAtLeast(1)
@@ -208,6 +280,140 @@ object ProgressionEngine {
             )
         }
     }
+
+    /** Tekrar merdiveni reçetesi. */
+    private fun prescribeLadder(
+        history: List<SessionLog>,
+        targetSets: Int,
+        scheme: RepScheme,
+        kind: LoadKind,
+        profile: LoadingProfile,
+        deload: Boolean,
+        exerciseName: String
+    ): Prescription {
+        val setCount = targetSets.coerceAtLeast(1)
+        val lo = scheme.rangeLo
+        val hi = scheme.rangeHi
+        val sessions = history.filter { s -> s.sets.any { it.reps > 0 } }.sortedBy { it.dateMillis }
+        // Dips / barfiks: ağırlıklı versiyonda (kg alanı olan) plaka adımıyla artar.
+        val step = if (kind == LoadKind.BODYWEIGHT) 0f
+        else profile.step(kind).takeIf { it > 0f } ?: profile.barbellStep
+        val first = scheme.targets(0, setCount)
+
+        if (sessions.isEmpty()) {
+            return Prescription(
+                action = ProgressAction.FIRST,
+                weight = 0f,
+                repTargets = first,
+                repMin = lo, repMax = hi,
+                headline = first.joinToString("/"),
+                reason = "${scheme.label} · merdivenin ilk basamağı ${first.joinToString("-")}. " +
+                    if (kind == LoadKind.BODYWEIGHT) "Tüm setleri temiz formla tamamlamaya odaklan."
+                    else "Son sette 1-2 tekrar yedek bırakacağın (RPE 8) bir ağırlık seç."
+            )
+        }
+
+        val last = sessions.last()
+        val working = last.sets.filter { it.reps > 0 }
+        val w = workingWeight(working)
+        val repsAtW = working.filter { abs(it.weight - w) < 0.01f }.map { it.reps }
+        val topRpe = working.filter { abs(it.weight - w) < 0.01f }.maxOfOrNull { it.rpe } ?: 0f
+        val stalled = stallCount(sessions)
+        val regressing = isRegressing(sessions)
+        val best = sessions.maxOf { it.bestE1rm }
+
+        fun build(action: ProgressAction, weight: Float, reps: List<Int>, reason: String) = Prescription(
+            action = action,
+            weight = weight,
+            repTargets = reps,
+            repMin = lo, repMax = hi,
+            headline = if (weight <= 0f) reps.joinToString("/") else "${weight.trimNum()} kg · ${reps.joinToString("/")}",
+            reason = reason + plateauNote(stalled, action),
+            stalledSessions = stalled,
+            regressing = regressing,
+            lastWeight = w,
+            bestE1rm = best
+        )
+
+        if (deload) {
+            val dSets = maxOf(1, (setCount + 1) / 2)
+            val dWeight = if (w <= 0f || step <= 0f) w else {
+                val r = Calc.roundToNearest(w * 0.9f, step)
+                if (r >= w) nextDown(w, step) else r
+            }
+            return build(
+                ProgressAction.DELOAD, dWeight, scheme.targets(0, dSets),
+                "Deload haftası: yük hafif, set yarıda, ilk basamak. Amaç toparlanmak."
+            )
+        }
+
+        // Geçen seans hangi basamağın hedeflerini tam tuttu?
+        val required = maxOf(1, minOf(setCount, repsAtW.size))
+        fun met(stepIdx: Int): Boolean {
+            if (repsAtW.size < required) return false
+            val t = scheme.targets(stepIdx, setCount)
+            return (0 until required).all { i -> repsAtW[i] >= t[i] }
+        }
+        val kMet = (scheme.lastStep downTo 0).firstOrNull { met(it) } ?: -1
+        val minReps = repsAtW.minOrNull() ?: 0
+
+        // Son basamak tamam → ağırlık artır, ilk basamağa dön
+        if (kMet == scheme.lastStep) {
+            val top = scheme.targets(scheme.lastStep, setCount).joinToString("-")
+            return when {
+                topRpe >= GRIND_RPE -> build(
+                    ProgressAction.HOLD, w, scheme.targets(scheme.lastStep, setCount),
+                    "$top tamam ama son set RPE ${topRpe.trimNum()}. Artıştan önce aynı basamağı RPE 9 altında tekrarla."
+                )
+                step <= 0f -> build(
+                    ProgressAction.INCREASE, w, scheme.targets(scheme.lastStep, setCount),
+                    "$top tamamlandı — ağırlıklı sisteme geçme zamanı. Programda '${weightedVariant(exerciseName)}' ile değiştir; kemerle +2,5 kg ekleyip ${first.joinToString("-")}'dan başla."
+                )
+                else -> {
+                    val nw = nextUp(w, step)
+                    build(
+                        ProgressAction.INCREASE, nw, first,
+                        "$top merdiveni tamam. +${(nw - w).trimNum()} kg, ${first.joinToString("-")} ile yeniden başla."
+                    )
+                }
+            }
+        }
+
+        // Taban basamağın belirgin altında: iki seans üst üste ise hafiflet
+        if (kMet < 0 && minReps < scheme.base - 1 && step > 0f && w > 0f) {
+            val prev = sessions.getOrNull(sessions.size - 2)
+            val missedBefore = prev != null && run {
+                val pw = prev.sets.filter { it.reps > 0 }
+                abs(workingWeight(pw) - w) < 0.01f &&
+                    (pw.filter { abs(it.weight - w) < 0.01f }.minOfOrNull { it.reps } ?: hi) < scheme.base - 1
+            }
+            if (missedBefore || topRpe >= 10f) {
+                return build(
+                    ProgressAction.DECREASE, nextDown(w, step), first,
+                    if (missedBefore) "İki seanstır ilk basamağın altındasın. Bir kademe hafifle, ${first.joinToString("-")} ile yeniden tırman."
+                    else "Tükeniş setine gitmişsin. Bir kademe hafifle, ${first.joinToString("-")} ile devam."
+                )
+            }
+        }
+
+        val next = kMet + 1
+        val targets = scheme.targets(next, setCount)
+        val remaining = scheme.lastStep - next
+        val tail = if (remaining == 0) " Bu son basamak — tamamlarsan " + (if (step > 0f) "ağırlık artacak." else "ağırlıklı sisteme geçeceksin.")
+        else if (step > 0f) " Ağırlık artışına $remaining basamak kaldı."
+        else " Ağırlıklı sisteme geçişe $remaining basamak kaldı."
+        return if (kMet < 0) build(
+            ProgressAction.HOLD, w, targets,
+            "Aynı basamak: ${targets.joinToString("-")}. Geçen seans tüm hedefler tutmadı; bu hafta hepsini tamamla.$tail"
+        ) else build(
+            ProgressAction.REPS, w, targets,
+            "Geçen hafta ${scheme.targets(kMet, setCount).joinToString("-")} tamam. Bu hafta her sete +1: ${targets.joinToString("-")}.$tail"
+        )
+    }
+
+    /** Ağırlıklı versiyon önerisi: dips → "Ağırlıklı Dips", diğerleri → "Ağırlıklı Barfiks". */
+    private fun weightedVariant(name: String): String =
+        if (name.lowercase(java.util.Locale("tr")).contains("dip")) "Ağırlıklı Dips" else "Ağırlıklı Barfiks"
 
     /** Seansın çalışma ağırlığı: en çok set yapılan ağırlık (eşitlikte ağır olan). */
     fun workingWeight(sets: List<LoggedSet>): Float {

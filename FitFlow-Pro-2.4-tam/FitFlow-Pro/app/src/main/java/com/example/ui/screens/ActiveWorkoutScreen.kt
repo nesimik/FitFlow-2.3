@@ -606,7 +606,10 @@ private fun ExerciseLogCard(
                     if (se.isWarmup) Badge("Isınma", Palette.warning)
                     Text(
                         if (isDuration) "Dinlenme ${se.restSeconds} sn"
-                        else "${se.targetRepMin}-${se.targetRepMax} tekrar · ${se.restSeconds} sn",
+                        else se.prescription?.let { rx ->
+                            val sch = com.example.core.RepScheme.classify(se.name, se.muscleGroup, se.equipment, se.trackingType)
+                            (sch?.let { "${it.label} · " } ?: "") + "${rx.repMin}-${rx.repMax} tekrar · ${se.restSeconds} sn"
+                        } ?: "${se.targetRepMin}-${se.targetRepMax} tekrar · ${se.restSeconds} sn",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.fit.muted,
                         maxLines = 1

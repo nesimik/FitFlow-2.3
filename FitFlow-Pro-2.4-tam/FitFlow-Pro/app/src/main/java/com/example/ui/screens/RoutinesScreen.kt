@@ -317,7 +317,13 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                         activeWorkout = activeWorkout,
                         nameOf = { id -> exerciseMap[id]?.name ?: "?" },
                         groupOf = { id -> exerciseMap[id]?.muscleGroup ?: "Diğer" },
-                        onOpen = { nav.navigate("${Routes.DAY}/${day.id}") },
+                        // Gün devam ediyorsa doğrudan seansa dön; düzenleme ⋮ menüsünde.
+                        onOpen = {
+                            val act = activeWorkout
+                            if (act != null && !act.isFinished && act.routineDayId == day.id) nav.navigate("${Routes.WORKOUT}/${act.id}")
+                            else nav.navigate("${Routes.DAY}/${day.id}")
+                        },
+                        onEdit = { nav.navigate("${Routes.DAY}/${day.id}") },
                         onStart = { vm.startWorkout(day) { id -> nav.navigate("${Routes.WORKOUT}/$id") } },
                         onContinue = { workoutId -> nav.navigate("${Routes.WORKOUT}/$workoutId") },
                         onDuplicate = { vm.duplicateDay(day) },
@@ -544,6 +550,7 @@ private fun DayCard(
     nameOf: (Long) -> String,
     groupOf: (Long) -> String,
     onOpen: () -> Unit,
+    onEdit: () -> Unit,
     onStart: () -> Unit,
     onContinue: (Long) -> Unit,
     onDuplicate: () -> Unit,
@@ -622,7 +629,7 @@ private fun DayCard(
                         }
                         DropdownMenuItem(
                             text = { Text("Düzenle") },
-                            onClick = { menu = false; onOpen() },
+                            onClick = { menu = false; onEdit() },
                             leadingIcon = { Icon(Icons.Default.Edit, null) }
                         )
                         DropdownMenuItem(
@@ -681,6 +688,7 @@ private fun DayCard(
 @Composable
 fun DayEditorScreen(vm: AppViewModel, nav: NavHostController, dayId: Long) {
     val days by vm.allDays.collectAsStateWithLifecycle()
+    val activeWorkoutState by vm.activeWorkout.collectAsStateWithLifecycle()
     val allItems by vm.allItems.collectAsStateWithLifecycle()
     val day = days.firstOrNull { it.id == dayId }
     val items = allItems.filter { it.dayId == dayId }.sortedBy { it.orderIndex }
@@ -764,12 +772,23 @@ fun DayEditorScreen(vm: AppViewModel, nav: NavHostController, dayId: Long) {
         }
 
         Row(Modifier.fillMaxWidth().padding(16.dp)) {
-            AccentButton(
-                "Bu günle antrenmana başla",
-                { vm.startWorkout(day) { id -> nav.navigate("${Routes.WORKOUT}/$id") } },
-                Modifier.fillMaxWidth(),
-                Icons.Default.PlayArrow
-            )
+            val running = activeWorkoutState
+            if (running != null && !running.isFinished) {
+                // Devam eden seans varken yeni seans açmak onu kapatır; bu yüzden seansa dönüş sunulur.
+                AccentButton(
+                    if (running.routineDayId == day.id) "Seansa dön" else "Devam eden seansa dön · ${running.title}",
+                    { nav.navigate("${Routes.WORKOUT}/${running.id}") },
+                    Modifier.fillMaxWidth(),
+                    Icons.Default.PlayArrow
+                )
+            } else {
+                AccentButton(
+                    "Bu günle antrenmana başla",
+                    { vm.startWorkout(day) { id -> nav.navigate("${Routes.WORKOUT}/$id") } },
+                    Modifier.fillMaxWidth(),
+                    Icons.Default.PlayArrow
+                )
+            }
         }
     }
 

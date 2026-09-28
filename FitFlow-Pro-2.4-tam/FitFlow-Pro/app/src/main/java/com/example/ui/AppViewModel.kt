@@ -343,7 +343,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             kind = if (tracking == ExerciseEntity.TRACK_REPS) LoadKind.BODYWEIGHT
                                    else loadKindOf(ex?.equipment ?: ""),
                             profile = settings.loadingProfile(),
-                            deload = workout.isDeload
+                            deload = workout.isDeload,
+                            scheme = com.example.core.RepScheme.classify(
+                                ex?.name ?: sets.first().exerciseName, ex?.muscleGroup ?: "", ex?.equipment ?: "", tracking
+                            ),
+                            exerciseName = ex?.name ?: sets.first().exerciseName
                         )
                         SessionExercise(
                             exerciseId = exId,
@@ -421,6 +425,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /* ------------------------------ Seans akışı ----------------------------- */
 
     fun startWorkout(day: RoutineDayEntity?, isDeload: Boolean? = null, onStarted: (Long) -> Unit = {}) {
+        // Aynı gün için devam eden seans varsa yenisini açma (yeni seans eskisini kapatır): mevcut seansa dön.
+        val running = activeWorkout.value
+        if (day != null && running != null && !running.isFinished && running.routineDayId == day.id) {
+            onStarted(running.id)
+            return
+        }
         viewModelScope.launch {
             val routine = activeRoutine.value
             val shouldDeload = isDeload ?: deloadRecommendation.value.isCurrentlyDeloadWeek
@@ -1019,7 +1029,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 repMax = item.repMax,
                 kind = if (ex.trackingType == ExerciseEntity.TRACK_REPS) LoadKind.BODYWEIGHT else loadKindOf(ex.equipment),
                 profile = profile,
-                deload = deload
+                deload = deload,
+                scheme = com.example.core.RepScheme.classify(ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
+                exerciseName = ex.name
             )
         }
     }
@@ -1046,7 +1058,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 repMin = se.targetRepMin,
                 repMax = se.targetRepMax,
                 kind = if (se.trackingType == ExerciseEntity.TRACK_REPS) LoadKind.BODYWEIGHT else loadKindOf(se.equipment),
-                profile = profile
+                profile = profile,
+                scheme = com.example.core.RepScheme.classify(se.name, se.muscleGroup, se.equipment, se.trackingType),
+                exerciseName = se.name
             )
             next += se.name to rx
         }

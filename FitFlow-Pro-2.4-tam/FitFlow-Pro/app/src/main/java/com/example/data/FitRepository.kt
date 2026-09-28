@@ -413,9 +413,12 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                         targetSets = baseSets,
                         repMin = item.repMin,
                         repMax = item.repMax,
-                        kind = com.example.core.loadKindOf(ex.equipment),
+                        kind = if (ex.trackingType == ExerciseEntity.TRACK_REPS) com.example.core.LoadKind.BODYWEIGHT
+                               else com.example.core.loadKindOf(ex.equipment),
                         profile = profile,
-                        deload = isDeload
+                        deload = isDeload,
+                        scheme = com.example.core.RepScheme.classify(ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
+                        exerciseName = ex.name
                     ).takeIf { it.action != com.example.core.ProgressAction.FIRST }
                 }
                 var workingIndex = 0
