@@ -183,6 +183,55 @@ class SettingsStore(context: Context) {
         prefs.edit().putLong(K_DELOAD_DISMISSED, weekStartMillis).apply()
     }
 
+    /* ------------------------ Otomatik yedek ve bildirimler ------------------------ */
+    /** Otomatik yedeklerin yazılacağı klasör (SAF ağaç URI'si); boş = kapalı. */
+    private val _backupFolder = flow(prefs.getString(K_BACKUP_FOLDER, "") ?: "")
+    val backupFolder: StateFlow<String> = _backupFolder.asStateFlow()
+    fun setBackupFolder(uri: String) { _backupFolder.value = uri; prefs.edit().putString(K_BACKUP_FOLDER, uri).apply() }
+
+    private val _lastBackupAt = flow(prefs.getLong(K_LAST_BACKUP, 0L))
+    val lastBackupAt: StateFlow<Long> = _lastBackupAt.asStateFlow()
+    fun setLastBackupAt(v: Long) { _lastBackupAt.value = v; prefs.edit().putLong(K_LAST_BACKUP, v).apply() }
+
+    /** Son otomatik yedek hatası (boş = sorun yok). */
+    private val _backupError = flow(prefs.getString(K_BACKUP_ERROR, "") ?: "")
+    val backupError: StateFlow<String> = _backupError.asStateFlow()
+    fun setBackupError(v: String) { _backupError.value = v; prefs.edit().putString(K_BACKUP_ERROR, v).apply() }
+
+    /** Arka plandaki yedek işi başka bir örnekten yazınca ekranın da güncellenmesi için. */
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+        when (key) {
+            K_LAST_BACKUP -> _lastBackupAt.value = p.getLong(K_LAST_BACKUP, 0L)
+            K_BACKUP_ERROR -> _backupError.value = p.getString(K_BACKUP_ERROR, "") ?: ""
+        }
+    }
+    init { prefs.registerOnSharedPreferenceChangeListener(prefListener) }
+
+    /** Antrenman günü hatırlatıcısı. */
+    private val _reminderOn = flow(prefs.getBoolean(K_REMINDER_ON, false))
+    val reminderOn: StateFlow<Boolean> = _reminderOn.asStateFlow()
+    fun setReminderOn(v: Boolean) { _reminderOn.value = v; prefs.edit().putBoolean(K_REMINDER_ON, v).apply() }
+
+    /** Hatırlatma saati, gün içindeki dakika (ör. 17:30 = 1050). */
+    private val _reminderMinute = flow(prefs.getInt(K_REMINDER_MIN, 17 * 60))
+    val reminderMinute: StateFlow<Int> = _reminderMinute.asStateFlow()
+    fun setReminderMinute(v: Int) { _reminderMinute.value = v; prefs.edit().putInt(K_REMINDER_MIN, v).apply() }
+
+    /** Pazartesi haftalık rapor bildirimi. */
+    private val _weeklyReportOn = flow(prefs.getBoolean(K_WEEKLY_REPORT, true))
+    val weeklyReportOn: StateFlow<Boolean> = _weeklyReportOn.asStateFlow()
+    fun setWeeklyReportOn(v: Boolean) { _weeklyReportOn.value = v; prefs.edit().putBoolean(K_WEEKLY_REPORT, v).apply() }
+
+    /** Haftalık raporun en son gönderildiği haftanın başlangıcı. */
+    var lastReportWeek: Long
+        get() = prefs.getLong(K_LAST_REPORT_WEEK, 0L)
+        set(v) { prefs.edit().putLong(K_LAST_REPORT_WEEK, v).apply() }
+
+    /** Hatırlatmanın en son gönderildiği günün başlangıcı. */
+    var lastReminderDay: Long
+        get() = prefs.getLong(K_LAST_REMINDER_DAY, 0L)
+        set(v) { prefs.edit().putLong(K_LAST_REMINDER_DAY, v).apply() }
+
     /** İlerleme trend grafiği: true = çizgi, false = sütun. */
     private val _trendAsLine = flow(prefs.getBoolean(K_TREND_LINE, false))
     val trendAsLine: StateFlow<Boolean> = _trendAsLine.asStateFlow()
@@ -215,6 +264,9 @@ class SettingsStore(context: Context) {
         const val K_DELOAD_WEEK_START = "deload_week_start"; const val K_PRE_DELOAD_BACKUP = "pre_deload_backup"
         const val K_DELOAD_DISMISSED = "deload_dismissed_week"; const val K_BLOCK_WEEKS = "block_load_weeks"
         const val K_TREND_LINE = "trend_as_line"
+        const val K_BACKUP_FOLDER = "backup_folder"; const val K_LAST_BACKUP = "last_backup_at"; const val K_BACKUP_ERROR = "backup_error"
+        const val K_REMINDER_ON = "reminder_on"; const val K_REMINDER_MIN = "reminder_minute"; const val K_WEEKLY_REPORT = "weekly_report"
+        const val K_LAST_REPORT_WEEK = "last_report_week"; const val K_LAST_REMINDER_DAY = "last_reminder_day"
         const val K_TARGET_WEIGHT = "target_weight"; const val K_GOAL_LIFT = "goal_lift"; const val K_GOAL_LIFT_KG = "goal_lift_kg"
     }
 }

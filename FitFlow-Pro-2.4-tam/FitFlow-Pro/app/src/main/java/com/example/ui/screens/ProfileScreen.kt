@@ -829,6 +829,8 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                 }
             }
 
+            item { com.example.ui.components.BackupAndReminderCard(vm) }
+
             item {
                 FitCard {
                     OverlineText("Güvenlik")
@@ -855,7 +857,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                     OverlineText("Hakkında")
                     Spacer(Modifier.height(8.dp))
                     KeyValueRow("Uygulama", "FitFlow Pro2")
-                    KeyValueRow("Sürüm", "2.0")
+                    KeyValueRow("Sürüm", com.example.BuildConfig.VERSION_NAME)
                     KeyValueRow("Veri", "Cihazında saklanır")
                     Spacer(Modifier.height(6.dp))
                     Text(

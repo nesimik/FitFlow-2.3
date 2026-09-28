@@ -698,6 +698,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             stopRest()
             _elapsed.value = 0
             if (newPrs.isNotEmpty()) _celebration.value = PrCelebration(newPrs, w.title)
+            com.example.work.FitJobs.backupNow(getApplication())
             onDone()
         }
     }
