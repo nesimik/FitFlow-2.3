@@ -1075,8 +1075,9 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
 
     /* ------------------------- Vücut ölçümü & notlar ------------------------ */
 
-    suspend fun saveBodyMetric(m: BodyMetricEntity) =
-        if (m.id == 0L) { dao.insertBodyMetric(m); Unit } else dao.updateBodyMetric(m)
+    /** @return kaydın id'si */
+    suspend fun saveBodyMetric(m: BodyMetricEntity): Long =
+        if (m.id == 0L) dao.insertBodyMetric(m) else { dao.updateBodyMetric(m); m.id }
 
     suspend fun deleteBodyMetric(m: BodyMetricEntity) = dao.deleteBodyMetric(m)
 

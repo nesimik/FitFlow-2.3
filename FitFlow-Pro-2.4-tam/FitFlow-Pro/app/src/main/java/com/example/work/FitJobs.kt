@@ -95,6 +95,7 @@ class DailyWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
         runCatching { Reminders.maybeWeeklyReport(applicationContext, settings) }
         // Son 24 saatte yedek alınmadıysa ve yeni veri varsa yedekle.
         runCatching { AutoBackup.run(applicationContext, settings, onlyIfChanged = true) }
+        runCatching { WidgetUpdater.refresh(applicationContext) }
         return Result.success()
     }
 }

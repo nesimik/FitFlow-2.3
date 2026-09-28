@@ -207,6 +207,11 @@ class SettingsStore(context: Context) {
     }
     init { prefs.registerOnSharedPreferenceChangeListener(prefListener) }
 
+    /** Health Connect eşitlemesi açık mı. */
+    private val _healthConnectOn = flow(prefs.getBoolean(K_HEALTH, false))
+    val healthConnectOn: StateFlow<Boolean> = _healthConnectOn.asStateFlow()
+    fun setHealthConnectOn(v: Boolean) { _healthConnectOn.value = v; prefs.edit().putBoolean(K_HEALTH, v).apply() }
+
     /** Antrenman günü hatırlatıcısı. */
     private val _reminderOn = flow(prefs.getBoolean(K_REMINDER_ON, false))
     val reminderOn: StateFlow<Boolean> = _reminderOn.asStateFlow()
@@ -267,6 +272,7 @@ class SettingsStore(context: Context) {
         const val K_BACKUP_FOLDER = "backup_folder"; const val K_LAST_BACKUP = "last_backup_at"; const val K_BACKUP_ERROR = "backup_error"
         const val K_REMINDER_ON = "reminder_on"; const val K_REMINDER_MIN = "reminder_minute"; const val K_WEEKLY_REPORT = "weekly_report"
         const val K_LAST_REPORT_WEEK = "last_report_week"; const val K_LAST_REMINDER_DAY = "last_reminder_day"
+        const val K_HEALTH = "health_connect_on"
         const val K_TARGET_WEIGHT = "target_weight"; const val K_GOAL_LIFT = "goal_lift"; const val K_GOAL_LIFT_KG = "goal_lift_kg"
     }
 }

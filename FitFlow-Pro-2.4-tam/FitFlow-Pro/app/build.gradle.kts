@@ -14,8 +14,8 @@ android {
     applicationId = "com.nesimi.fitflow2"
     minSdk = 24
     targetSdk = 36
-    versionCode = 14
-    versionName = "2.14"
+    versionCode = 15
+    versionName = "2.15"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -96,6 +96,7 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.work.runtime.ktx)
+  implementation(libs.androidx.health.connect.client)
   // implementation(libs.coil.compose)
   // implementation(libs.firebase.ai)
   implementation(libs.kotlinx.coroutines.android)

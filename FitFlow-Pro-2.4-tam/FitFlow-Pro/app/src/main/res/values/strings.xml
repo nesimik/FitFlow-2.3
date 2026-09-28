@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">FitFlow2</string>
+    <string name="widget_description">Sıradaki antrenman, seri ve haftalık hedef</string>
 </resources>

@@ -19,6 +19,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +44,22 @@ fun BackupAndReminderCard(vm: AppViewModel) {
     val remindOn by s.reminderOn.collectAsStateWithLifecycle()
     val remindMin by s.reminderMinute.collectAsStateWithLifecycle()
     val reportOn by s.weeklyReportOn.collectAsStateWithLifecycle()
+    val healthOn by s.healthConnectOn.collectAsStateWithLifecycle()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var healthMsg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    val healthAvailable = androidx.compose.runtime.remember { com.example.work.HealthSync.isAvailable(context) }
+    val healthPerms = rememberLauncherForActivityResult(
+        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        if (granted.containsAll(com.example.work.HealthSync.PERMISSIONS)) {
+            s.setHealthConnectOn(true)
+            healthMsg = "Eşitleniyor…"
+            scope.launch { val n = com.example.work.HealthSync.syncAll(context); healthMsg = "$n kayıt gönderildi" }
+        } else {
+            s.setHealthConnectOn(false)
+            healthMsg = "İzin verilmedi"
+        }
+    }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
@@ -115,6 +133,35 @@ fun BackupAndReminderCard(vm: AppViewModel) {
             "Pazartesi: geçen haftanın özeti, eksik kaslar ve bu haftanın hedefi",
             reportOn
         ) { s.setWeeklyReportOn(it) }
+
+        Spacer(Modifier.height(16.dp))
+        OverlineText("Health Connect")
+        Spacer(Modifier.height(6.dp))
+        if (!healthAvailable) {
+            Text(
+                "Bu telefonda Health Connect bulunamadı. Play Store'dan \"Health Connect\" uygulamasını kurarsan antrenmanların ve kilon Samsung Health / Google Fit'e aktarılabilir.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.fit.muted
+            )
+        } else {
+            LabeledSwitch(
+                "Samsung Health / Google Fit eşitlemesi",
+                "Biten antrenmanlar ve kilo ölçümleri Health Connect'e yazılır",
+                healthOn
+            ) { on ->
+                if (on) healthPerms.launch(com.example.work.HealthSync.PERMISSIONS)
+                else { s.setHealthConnectOn(false); healthMsg = "" }
+            }
+            if (healthOn) {
+                GhostButton("Geçmişi şimdi eşitle", {
+                    healthMsg = "Eşitleniyor…"
+                    scope.launch { val n = com.example.work.HealthSync.syncAll(context); healthMsg = "$n kayıt gönderildi" }
+                }, Modifier.fillMaxWidth())
+            }
+            if (healthMsg.isNotBlank()) {
+                Text(healthMsg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+            }
+        }
     }
 }
 

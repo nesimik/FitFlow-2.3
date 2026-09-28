@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.work.FitJobs.ensureScheduled(applicationContext)
+        com.example.work.WidgetUpdater.refresh(applicationContext)
         enableEdgeToEdge()
         if (savedInstanceState == null &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

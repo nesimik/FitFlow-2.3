@@ -727,7 +727,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _elapsed.value = 0
             if (newPrs.isNotEmpty()) _celebration.value = PrCelebration(newPrs, w.title)
             com.example.work.FitJobs.backupNow(getApplication())
+            com.example.work.WidgetUpdater.refresh(getApplication())
             onDone()
+            runCatching { com.example.work.HealthSync.syncWorkout(getApplication(), w.id) }
         }
     }
 
@@ -1027,8 +1029,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /* -------------------------- Vücut ölçümü / not --------------------------- */
 
     fun saveBodyMetric(m: BodyMetricEntity) = viewModelScope.launch {
-        repo.saveBodyMetric(m)
-        if (m.weightKg > 0f) settings.setBodyWeight(m.weightKg)
+        val id = repo.saveBodyMetric(m)
+        if (m.weightKg > 0f) {
+            settings.setBodyWeight(m.weightKg)
+            runCatching { com.example.work.HealthSync.syncWeight(getApplication(), id, m.dateMillis, m.weightKg) }
+        }
     }
 
     fun deleteBodyMetric(m: BodyMetricEntity) = viewModelScope.launch { repo.deleteBodyMetric(m) }
