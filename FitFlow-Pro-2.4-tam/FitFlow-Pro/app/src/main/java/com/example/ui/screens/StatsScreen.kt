@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.BarChart as BarChartIcon
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
@@ -232,12 +233,15 @@ private fun OverviewTab(vm: AppViewModel, nav: NavHostController) {
         val series = if (period == 0) weekly.takeLast(8) else monthly.takeLast(6)
         if (series.isNotEmpty()) {
             item {
+                val asLine by vm.settings.trendAsLine.collectAsStateWithLifecycle()
                 TrendCard(
                     series = series,
                     period = period,
                     metric = metric,
+                    asLine = asLine,
                     onPeriod = { period = it },
-                    onMetric = { metric = it }
+                    onMetric = { metric = it },
+                    onChartStyle = { vm.settings.setTrendAsLine(it) }
                 )
             }
         }
@@ -370,8 +374,10 @@ private fun TrendCard(
     series: List<com.example.core.PeriodPoint>,
     period: Int,
     metric: Int,
+    asLine: Boolean,
     onPeriod: (Int) -> Unit,
-    onMetric: (Int) -> Unit
+    onMetric: (Int) -> Unit,
+    onChartStyle: (Boolean) -> Unit
 ) {
     val values = series.map { trendValue(it, metric) }
     val current = values.lastOrNull() ?: 0f
@@ -383,6 +389,8 @@ private fun TrendCard(
     FitCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Trend", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            ChartStyleToggle(asLine, onChartStyle)
+            Spacer(Modifier.width(8.dp))
             SegmentedToggle(listOf("Haftalık", "Aylık"), period, onPeriod)
         }
         Spacer(Modifier.height(12.dp))
@@ -415,18 +423,57 @@ private fun TrendCard(
             }
         }
         Spacer(Modifier.height(10.dp))
-        BarChart(
-            values = values,
-            labels = series.map { it.label },
-            format = { trendFormat(it, metric) },
-            showAverage = true,
-            height = 150.dp
-        )
+        if (asLine) {
+            LineChart(
+                values = values,
+                labels = series.map { it.label },
+                format = { trendFormat(it, metric) },
+                height = 150.dp
+            )
+        } else {
+            BarChart(
+                values = values,
+                labels = series.map { it.label },
+                format = { trendFormat(it, metric) },
+                showAverage = true,
+                height = 150.dp
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TrendStat("Ortalama", trendFormat(avg, metric), Modifier.weight(1f))
             TrendStat("Zirve", trendFormat(peak, metric), Modifier.weight(1f))
             TrendStat("Toplam", trendFormat(values.sum(), metric), Modifier.weight(1f))
+        }
+    }
+}
+
+/** Sütun / çizgi grafik seçimi: iki küçük ikon düğmesi. */
+@Composable
+private fun ChartStyleToggle(asLine: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.background)
+            .padding(2.dp)
+    ) {
+        listOf(false to androidx.compose.material.icons.Icons.Default.BarChartIcon,
+               true to androidx.compose.material.icons.Icons.Default.ShowChart).forEach { (line, icon) ->
+            val on = asLine == line
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (on) MaterialTheme.fit.elevated else Color.Transparent)
+                    .clickable { onChange(line) }
+                    .padding(horizontal = 7.dp, vertical = 5.dp)
+            ) {
+                androidx.compose.material3.Icon(
+                    icon,
+                    contentDescription = if (line) "Çizgi grafik" else "Sütun grafik",
+                    tint = if (on) MaterialTheme.fit.accent else MaterialTheme.fit.muted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }

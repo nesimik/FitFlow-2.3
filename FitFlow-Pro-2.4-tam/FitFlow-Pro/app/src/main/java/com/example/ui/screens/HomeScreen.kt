@@ -731,7 +731,7 @@ private fun WeekCard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>
 
 @Composable
 private fun RecoveryCard(recovery: Map<String, MuscleRecovery>, todayConflicts: List<String>?, onClick: () -> Unit) {
-    val colors = remember(recovery) { recovery.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
+    val colors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
     val notReady = recovery.values.filter { it.state != RecoveryState.FRESH }.sortedBy { it.readiness }
     FitCard(onClick = onClick, contentPadding = PaddingValues(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -811,7 +811,7 @@ private fun BodyStatusCard(
     onOpen: () -> Unit
 ) {
     var tab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(if (recovery.isEmpty()) 1 else 0) }
-    val recColors = remember(recovery) { recovery.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
+    val recColors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
     val loadColors = remember(loads, detail) {
         (loads + detail).mapNotNull { l -> MuscleColors.forStatus(l.status)?.let { l.key to it } }.toMap()
     }

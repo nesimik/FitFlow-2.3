@@ -61,7 +61,9 @@ fun LineChart(
     suffix: String = "",
     height: Dp = 170.dp,
     showArea: Boolean = true,
-    showPoints: Boolean = true
+    showPoints: Boolean = true,
+    /** Seçili noktanın değer biçimi (ör. ton). Verilmezse sayı + [suffix]. */
+    format: ((Float) -> String)? = null
 ) {
     if (values.isEmpty()) {
         ChartPlaceholder(height); return
@@ -86,7 +88,7 @@ fun LineChart(
         ) {
             Column {
                 Text(
-                    "${values.getOrElse(selected) { 0f }.trimNum()}$suffix",
+                    values.getOrElse(selected) { 0f }.let { v -> format?.invoke(v) ?: "${v.trimNum()}$suffix" },
                     style = MaterialTheme.typography.headlineMedium,
                     color = color
                 )

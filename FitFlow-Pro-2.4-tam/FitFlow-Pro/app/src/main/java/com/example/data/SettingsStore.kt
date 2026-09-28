@@ -183,6 +183,11 @@ class SettingsStore(context: Context) {
         prefs.edit().putLong(K_DELOAD_DISMISSED, weekStartMillis).apply()
     }
 
+    /** İlerleme trend grafiği: true = çizgi, false = sütun. */
+    private val _trendAsLine = flow(prefs.getBoolean(K_TREND_LINE, false))
+    val trendAsLine: StateFlow<Boolean> = _trendAsLine.asStateFlow()
+    fun setTrendAsLine(v: Boolean) { _trendAsLine.value = v; prefs.edit().putBoolean(K_TREND_LINE, v).apply() }
+
     /** Planlı blok: yüklenme haftası sayısı (ardından 1 hafta deload). 0 = otomatik. */
     private val _blockLoadWeeks = flow(prefs.getInt(K_BLOCK_WEEKS, 0))
     val blockLoadWeeks: StateFlow<Int> = _blockLoadWeeks.asStateFlow()
@@ -209,6 +214,7 @@ class SettingsStore(context: Context) {
         const val K_LOCK = "lock"; const val K_PASS = "pass"; const val K_ONBOARD = "onboard"
         const val K_DELOAD_WEEK_START = "deload_week_start"; const val K_PRE_DELOAD_BACKUP = "pre_deload_backup"
         const val K_DELOAD_DISMISSED = "deload_dismissed_week"; const val K_BLOCK_WEEKS = "block_load_weeks"
+        const val K_TREND_LINE = "trend_as_line"
         const val K_TARGET_WEIGHT = "target_weight"; const val K_GOAL_LIFT = "goal_lift"; const val K_GOAL_LIFT_KG = "goal_lift_kg"
     }
 }
