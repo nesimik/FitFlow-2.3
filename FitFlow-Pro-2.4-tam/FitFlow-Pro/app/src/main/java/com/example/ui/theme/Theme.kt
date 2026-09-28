@@ -22,16 +22,22 @@ import androidx.core.view.WindowCompat
 /* ------------------------------- Renk paleti ------------------------------- */
 
 object Palette {
-    // Koyu tema — derin gece mavisi/kömür
+    // Koyu tema — derin gece mavisi/kömür. Üç katman net ayrışır:
+    // arka plan < kart < kart içi kutu (her adım belirgin açılır).
     val bgDark = Color(0xFF0B0E13)
+    val surfaceDark = Color(0xFF181E27)
+    val surfaceDark2 = Color(0xFF232B36)
+    val outlineDark = Color(0xFF2C3542)
+
+    // AMOLED — zemin tam siyah, kartlar koyu gri + görünür ince kenar
     val bgAmoled = Color(0xFF000000)
-    val surfaceDark = Color(0xFF141921)
-    val surfaceDark2 = Color(0xFF1C222C)
-    val outlineDark = Color(0xFF262E3A)
+    val surfaceAmoled = Color(0xFF111418)
+    val surfaceAmoled2 = Color(0xFF1C2027)
+    val cardLineAmoled = Color(0x24FFFFFF)
     val onDark = Color(0xFFF1F3F6)
     val onDarkMuted = Color(0xFF8D97A7)
-    /** Kart kenarı: tasarımdaki gibi neredeyse görünmez ince çizgi (beyaz %6). */
-    val cardLineDark = Color(0x0FFFFFFF)
+    /** Kart kenarı: ince ama seçilebilir çizgi (beyaz %9). */
+    val cardLineDark = Color(0x17FFFFFF)
     /** Soluk ikincil yazı (ipuçları, alt notlar). */
     val faintDark = Color(0xFF6B7483)
 
@@ -189,9 +195,9 @@ fun FitFlowTheme(
             tertiary = Palette.violet,
             background = if (amoled) Palette.bgAmoled else Palette.bgDark,
             onBackground = Palette.onDark,
-            surface = if (amoled) Color(0xFF0B0B0D) else Palette.surfaceDark,
+            surface = if (amoled) Palette.surfaceAmoled else Palette.surfaceDark,
             onSurface = Palette.onDark,
-            surfaceVariant = if (amoled) Color(0xFF141417) else Palette.surfaceDark2,
+            surfaceVariant = if (amoled) Palette.surfaceAmoled2 else Palette.surfaceDark2,
             onSurfaceVariant = Palette.onDarkMuted,
             outline = Palette.outlineDark,
             outlineVariant = Palette.outlineDark.copy(alpha = 0.5f),
@@ -226,8 +232,8 @@ fun FitFlowTheme(
         danger = Palette.danger,
         gold = Palette.gold,
         muted = if (dark) Palette.onDarkMuted else Palette.onLightMuted,
-        cardBorder = if (dark) Palette.cardLineDark else Palette.outlineLight,
-        elevated = if (dark) (if (amoled) Color(0xFF141417) else Palette.surfaceDark2) else Palette.surfaceLight2,
+        cardBorder = if (dark) (if (amoled) Palette.cardLineAmoled else Palette.cardLineDark) else Palette.outlineLight,
+        elevated = if (dark) (if (amoled) Palette.surfaceAmoled2 else Palette.surfaceDark2) else Palette.surfaceLight2,
         isDark = dark
     )
 
