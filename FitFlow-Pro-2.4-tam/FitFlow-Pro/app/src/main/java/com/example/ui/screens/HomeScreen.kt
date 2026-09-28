@@ -55,6 +55,7 @@ import com.example.core.Analytics
 import com.example.core.MuscleMap
 import com.example.core.MuscleRecovery
 import com.example.core.trimNum
+import com.example.core.label
 import com.example.core.Prescription
 import com.example.core.ProgressAction
 import com.example.core.RecoveryState
@@ -731,7 +732,7 @@ private fun WeekCard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>
 
 @Composable
 private fun RecoveryCard(recovery: Map<String, MuscleRecovery>, todayConflicts: List<String>?, onClick: () -> Unit) {
-    val colors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
+    val colors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forReadiness(r.readiness) } }
     val notReady = recovery.values.filter { it.state != RecoveryState.FRESH }.sortedBy { it.readiness }
     FitCard(onClick = onClick, contentPadding = PaddingValues(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -750,7 +751,7 @@ private fun RecoveryCard(recovery: Map<String, MuscleRecovery>, todayConflicts: 
         } else {
             notReady.take(3).forEach { r ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(MuscleColors.forRecovery(r.state)))
+                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(MuscleColors.forReadiness(r.readiness).copy(alpha = 1f)))
                     Spacer(Modifier.width(8.dp))
                     Text(MuscleMap.label(r.key), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Text(
@@ -811,7 +812,7 @@ private fun BodyStatusCard(
     onOpen: () -> Unit
 ) {
     var tab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(if (recovery.isEmpty()) 1 else 0) }
-    val recColors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
+    val recColors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forReadiness(r.readiness) } }
     val loadColors = remember(loads, detail) {
         (loads + detail).mapNotNull { l -> MuscleColors.forStatus(l.status)?.let { l.key to it } }.toMap()
     }
@@ -849,9 +850,24 @@ private fun BodyStatusCard(
             }
         }
         Spacer(Modifier.height(10.dp))
-        BodyMuscleMapPair(colors = if (tab == 0) recColors else loadColors, height = 220.dp, showLabels = false)
+        var sel by remember { mutableStateOf<String?>(null) }
+        BodyMuscleMapPair(
+            colors = if (tab == 0) recColors else loadColors,
+            height = 220.dp,
+            showLabels = false,
+            selected = sel,
+            onMuscleTap = { key -> sel = if (sel == key) null else key }
+        )
         Spacer(Modifier.height(10.dp))
-        if (tab == 0) {
+        val selKey = sel
+        if (selKey != null) {
+            MuscleInfoPanel(
+                key = selKey,
+                recovery = if (tab == 0) recovery[selKey] else null,
+                load = if (tab == 1) (loads + detail).firstOrNull { it.key == selKey } else null,
+                recoveryMode = tab == 0
+            )
+        } else if (tab == 0) {
             val notReady = recovery.values.filter { it.state != RecoveryState.FRESH }.sortedBy { it.readiness }
             if (todayConflicts != null && todayConflicts.isNotEmpty()) {
                 Text(
@@ -866,7 +882,7 @@ private fun BodyStatusCard(
             } else {
                 notReady.take(3).forEach { r ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(MuscleColors.forRecovery(r.state)))
+                        Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(MuscleColors.forReadiness(r.readiness).copy(alpha = 1f)))
                         Spacer(Modifier.width(8.dp))
                         Text(MuscleMap.label(r.key), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Text(
@@ -1159,6 +1175,62 @@ private fun nextSessionMillis(day: RoutineDayEntity, workouts: List<WorkoutEntit
     cal.set(Calendar.HOUR_OF_DAY, hour)
     cal.set(Calendar.MINUTE, 0)
     return cal.timeInMillis
+}
+
+/** Haritada dokunulan kasın bilgisi (toparlanma ya da haftalık yük). */
+@Composable
+private fun MuscleInfoPanel(
+    key: String,
+    recovery: MuscleRecovery?,
+    load: com.example.core.MuscleLoad?,
+    recoveryMode: Boolean
+) {
+    val color = when {
+        recoveryMode && recovery != null && recovery.state != RecoveryState.FRESH -> MuscleColors.forReadiness(recovery.readiness).copy(alpha = 1f)
+        recoveryMode -> MuscleColors.fresh
+        load != null -> MuscleColors.forStatus(load.status) ?: MaterialTheme.fit.muted
+        else -> MaterialTheme.fit.muted
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(color))
+            Spacer(Modifier.width(8.dp))
+            Text(MuscleMap.label(key), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (recoveryMode) {
+                val pct = ((recovery?.readiness ?: 1f) * 100).toInt().coerceAtMost(100)
+                Text("%$pct hazır", style = MaterialTheme.typography.labelLarge.mono(), color = color)
+            } else if (load != null) {
+                Text("${load.effectiveSets.trimNum().replace('.', ',')} set", style = MaterialTheme.typography.labelLarge.mono(), color = color)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        val line = if (recoveryMode) {
+            when {
+                recovery == null || recovery.lastTrainedAt <= 0L -> "Son günlerde çalışılmadı · dinç"
+                recovery.state == RecoveryState.FRESH -> "Dinç · son çalışma ${agoText(recovery.lastTrainedAt)}"
+                else -> "Tam hazır: ${readyText(recovery.readyAt)} · son çalışma ${agoText(recovery.lastTrainedAt)} · ${recovery.recentSets.trimNum().replace('.', ',')} etkin set"
+            }
+        } else {
+            if (load == null) "Bu hafta çalışılmadı"
+            else "Hedef ${load.target.first}–${load.target.last} etkin set · ${load.status.label()}"
+        }
+        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+    }
+}
+
+private fun agoText(at: Long): String {
+    val days = Math.round((startOfDay(System.currentTimeMillis()) - startOfDay(at)) / 86_400_000.0).toInt()
+    return when {
+        days <= 0 -> "bugün"
+        days == 1 -> "dün"
+        else -> "$days gün önce"
+    }
 }
 
 private fun readyText(at: Long): String {

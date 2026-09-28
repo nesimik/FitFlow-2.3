@@ -40,6 +40,18 @@ object MuscleColors {
         RecoveryState.FATIGUED -> fatigued
     }
 
+    /**
+     * Toparlanma yüzdesine göre kademeli renk: 0 (tam yorgun) koyu kırmızı → turuncu → sarı;
+     * hazıra yaklaştıkça renk solar (alfa = yoğunluk, harita nötr griyle karıştırır).
+     * Dinç kaslar haritada hiç renklendirilmez.
+     */
+    fun forReadiness(readiness: Float): Color {
+        val t = (readiness / com.example.core.RecoveryEngine.READY).coerceIn(0f, 1f)
+        val hue = if (t < 0.6f) androidx.compose.ui.graphics.lerp(fatigued, recovering, t / 0.6f) else recovering
+        val alpha = if (t < 0.6f) 1f else 1f - (t - 0.6f) / 0.4f * 0.7f
+        return hue.copy(alpha = alpha.coerceIn(0.3f, 1f))
+    }
+
     val loadLegend: List<Pair<Color, String>> = listOf(
         low to "Çok az", below to "Az", optimal to "İdeal", high to "Yüksek", excessive to "Aşırı"
     )
