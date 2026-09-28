@@ -80,9 +80,17 @@ class RestNotifier(context: Context) {
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openApp())
+            .addAction(0, "+30 sn", action(RestActionReceiver.ADD30, 1))
+            .addAction(0, "Atla", action(RestActionReceiver.SKIP, 2))
             .build()
         try { nm.notify(ID, n) } catch (_: SecurityException) { }
     }
+
+    private fun action(what: String, code: Int): PendingIntent = PendingIntent.getBroadcast(
+        ctx, code,
+        Intent(ctx, RestActionReceiver::class.java).setAction(what),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
 
     @SuppressLint("MissingPermission")
     fun showFinished(label: String) {
@@ -109,5 +117,22 @@ class RestNotifier(context: Context) {
         const val CH_TIMER = "rest_timer"
         const val CH_DONE = "rest_done"
         const val ID = 4201
+    }
+}
+
+
+/** Bildirim düğmelerinden (kilit ekranı dahil) gelen dinlenme komutları; ViewModel dinler. */
+object RestActionBus {
+    val events = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8)
+}
+
+class RestActionReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        intent.action?.let { RestActionBus.events.tryEmit(it) }
+    }
+
+    companion object {
+        const val ADD30 = "com.nesimi.fitflow2.REST_ADD30"
+        const val SKIP = "com.nesimi.fitflow2.REST_SKIP"
     }
 }

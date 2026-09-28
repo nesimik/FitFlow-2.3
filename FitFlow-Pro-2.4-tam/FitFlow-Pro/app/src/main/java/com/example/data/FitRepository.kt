@@ -504,13 +504,37 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         }
     }
 
-    suspend fun addExerciseToWorkout(workoutId: Long, exerciseId: Long, sets: Int = 3) {
+    /**
+     * Seanstaki bir hareketi alternatifiyle değiştirir: aynı sırada, aynı set sayısıyla.
+     * Süperset bağı korunur. Tamamlanmış set varsa değişiklik yapılmaz.
+     */
+    suspend fun replaceExerciseInWorkout(workoutId: Long, exerciseOrder: Int, newExerciseId: Long, weightHint: Float) {
+        val old = dao.setsForWorkout(workoutId).filter { it.exerciseOrder == exerciseOrder }
+        if (old.isEmpty() || old.any { it.isCompleted }) return
+        old.forEach { dao.deleteSet(it) }
+        addExerciseToWorkout(
+            workoutId, newExerciseId, sets = old.count { !it.isWarmup }.coerceAtLeast(1),
+            atOrder = exerciseOrder, weightHint = weightHint
+        )
+        val group = old.first().supersetGroup
+        if (group > 0) setSessionExerciseSuperset(workoutId, exerciseOrder, group)
+    }
+
+    suspend fun addExerciseToWorkout(
+        workoutId: Long,
+        exerciseId: Long,
+        sets: Int = 3,
+        /** Verilirse hareket bu sıraya yerleşir (değiştirme); yoksa sona eklenir. */
+        atOrder: Int? = null,
+        /** Geçmiş yoksa kullanılacak tahmini ağırlık. */
+        weightHint: Float = 0f
+    ) {
         val ex = dao.exerciseById(exerciseId) ?: return
         val workout = dao.workoutById(workoutId)
         val workoutDate = workout?.startedAt ?: System.currentTimeMillis()
         val isFinished = workout?.isFinished ?: false
         val current = dao.setsForWorkout(workoutId)
-        val order = (current.maxOfOrNull { it.exerciseOrder } ?: -1) + 1
+        val order = atOrder ?: ((current.maxOfOrNull { it.exerciseOrder } ?: -1) + 1)
         val dayId = workout?.routineDayId
 
         val lastSets = if (dayId != null) {
@@ -530,7 +554,7 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
             WorkoutSetEntity(
                 workoutId = workoutId, exerciseId = ex.id, exerciseName = ex.name,
                 exerciseOrder = order, setNumber = i,
-                weightKg = prefill?.weightKg?.takeIf { it > 0f } ?: dayItem?.targetWeight ?: 0f,
+                weightKg = prefill?.weightKg?.takeIf { it > 0f } ?: dayItem?.targetWeight?.takeIf { it > 0f } ?: weightHint,
                 reps = if (isDuration) 0 else (prefill?.reps?.takeIf { it > 0 } ?: dayItem?.repMin ?: 10),
                 durationSeconds = if (isDuration) (prefill?.durationSeconds?.takeIf { it > 0 } ?: prefill?.reps?.takeIf { it > 0 } ?: dayItem?.repMin ?: 30) else 0,
                 isCompleted = isFinished,

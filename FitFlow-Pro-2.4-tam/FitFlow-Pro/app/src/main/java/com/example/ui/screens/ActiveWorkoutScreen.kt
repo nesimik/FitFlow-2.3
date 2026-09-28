@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.TrendingFlat
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -137,6 +138,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     var showFinish by remember { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
     var showTips by remember { mutableStateOf<SessionExercise?>(null) }
+    var altFor by remember { mutableStateOf<SessionExercise?>(null) }
     /** Düzenlenen set: (hareket sırası, set id). Güncel veri her seferinde listeden okunur. */
     var editing by remember { mutableStateOf<Pair<Int, Long>?>(null) }
 
@@ -228,6 +230,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                     onDissolveSuperset = { group -> vm.dissolveSessionSuperset(group) },
                     onStartRest = { vm.startRest(se.restSeconds, se.name, se.exerciseId) },
                     onShowTips = { showTips = se },
+                    onRequestAlternatives = { altFor = se },
                     onRenameExercise = { newName ->
                         if (newName.isNotBlank()) {
                             vm.renameSessionExercise(se.order, newName)
@@ -361,6 +364,19 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                 showFinish = false
                 vm.finishWorkout(notes, feeling) { nav.popBackStack() }
             }
+        )
+    }
+
+    altFor?.let { se ->
+        val options = remember(se.exerciseId, se.order) { vm.alternativesFor(se) }
+        AlternativesDialog(
+            current = se.name,
+            options = options,
+            onPick = { alt ->
+                vm.replaceSessionExercise(se.order, alt.exercise.id, alt.weightHint)
+                altFor = null
+            },
+            onDismiss = { altFor = null }
         )
     }
 
@@ -506,7 +522,8 @@ private fun ExerciseLogCard(
     onDissolveSuperset: (Int) -> Unit,
     onStartRest: () -> Unit,
     onShowTips: () -> Unit,
-    onRenameExercise: ((String) -> Unit)? = null
+    onRenameExercise: ((String) -> Unit)? = null,
+    onRequestAlternatives: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
@@ -677,6 +694,13 @@ private fun ExerciseLogCard(
                         onClick = { menu = false; onToggleWarmup() },
                         leadingIcon = { Icon(Icons.Default.Lightbulb, null) }
                     )
+                    if (se.completedSets == 0 && !se.isWarmup) {
+                        DropdownMenuItem(
+                            text = { Text("Alternatif hareket") },
+                            onClick = { menu = false; onRequestAlternatives() },
+                            leadingIcon = { Icon(Icons.Default.SwapHoriz, null) }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Yeniden adlandır") },
                         onClick = { menu = false; showRenameDialog = true },
@@ -875,6 +899,54 @@ private fun WarmupRamp(ramp: List<Pair<Float, Int>>, workWeight: Float, barKg: F
             )
         }
     }
+}
+
+/** Alternatif hareket seçimi: aynı kasları çalıştıran, farklı ekipman öncelikli liste. */
+@Composable
+private fun AlternativesDialog(
+    current: String,
+    options: List<com.example.core.Alternatives.Suggestion>,
+    onPick: (com.example.core.Alternatives.Suggestion) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Column {
+                Text("Alternatif hareket", style = MaterialTheme.typography.titleLarge)
+                Text("$current yerine", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+            }
+        },
+        text = {
+            if (options.isEmpty()) {
+                Text("Bu hareket için uygun alternatif bulunamadı.", color = MaterialTheme.fit.muted)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    options.forEach { o ->
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.fit.elevated)
+                                .clickable { onPick(o) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Text(o.exercise.name, style = MaterialTheme.typography.titleSmall)
+                            Text(o.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                        }
+                    }
+                    Text(
+                        "Setler aynı sayıda kalır; önceki kaydın varsa ağırlık oradan gelir.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.fit.muted
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
+    )
 }
 
 /** Seansın hedef zorluğu: "BLOK HEDEFİ · RIR 1-2 — 1-2 tekrar yedekte bırak." */

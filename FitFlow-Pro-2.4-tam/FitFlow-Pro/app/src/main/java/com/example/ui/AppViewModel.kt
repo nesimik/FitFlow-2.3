@@ -411,6 +411,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var alarmJob: Job? = null
 
     init {
+        // Kilit ekranı / bildirim düğmeleri: +30 sn ve Atla
+        viewModelScope.launch {
+            RestActionBus.events.collect { what ->
+                when (what) {
+                    RestActionReceiver.ADD30 -> adjustRest(30)
+                    RestActionReceiver.SKIP -> stopRest()
+                }
+            }
+        }
         viewModelScope.launch {
             val imported = repo.seedIfNeeded()
             _legacyImported.value = imported
@@ -557,6 +566,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addExerciseToWorkout(workoutId: Long, exerciseId: Long) {
         viewModelScope.launch { repo.addExerciseToWorkout(workoutId, exerciseId) }
+    }
+
+    /** Seanstaki hareket için alternatifler (aynı kaslar, farklı ekipman öncelikli). */
+    fun alternativesFor(se: SessionExercise): List<com.example.core.Alternatives.Suggestion> {
+        val lib = exercises.value
+        val target = lib.firstOrNull { it.id == se.exerciseId } ?: return emptyList()
+        val last = HashMap<Long, Float>()
+        allSets.value.asSequence()
+            .filter { it.isCompleted && !it.isWarmup }
+            .sortedBy { it.performedAt }
+            .forEach { last[it.exerciseId] = it.weightKg }
+        val work = se.prescription?.weight?.takeIf { it > 0f }
+            ?: se.sets.firstOrNull { !it.isWarmup }?.weightKg ?: 0f
+        return com.example.core.Alternatives.find(target, lib, last, work, settings.loadingProfile())
+    }
+
+    fun replaceSessionExercise(exerciseOrder: Int, newExerciseId: Long, weightHint: Float) {
+        val w = activeWorkout.value ?: return
+        viewModelScope.launch { repo.replaceExerciseInWorkout(w.id, exerciseOrder, newExerciseId, weightHint) }
     }
 
     fun removeExerciseFromSession(exerciseOrder: Int) {
