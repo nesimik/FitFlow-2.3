@@ -71,8 +71,7 @@ import com.example.data.WorkoutSetEntity
 import com.example.ui.AppViewModel
 import com.example.ui.Routes
 import com.example.ui.components.BodyMuscleMapPair
-import com.example.ui.components.DeloadAlertBox
-import com.example.ui.components.DeloadDesignDialog
+import com.example.ui.components.DeloadCard
 import com.example.ui.components.FitCard
 import com.example.ui.components.MuscleColors
 import com.example.ui.components.RoundIconButton
@@ -111,9 +110,8 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
     val weekLoads by vm.weeklyMuscleLoads.collectAsStateWithLifecycle()
     val weekDetail by vm.weeklyDetailLoads.collectAsStateWithLifecycle()
 
-    var showDeloadDesignDialog by remember { mutableStateOf(false) }
     var showCancelActiveDialog by remember { mutableStateOf(false) }
-    val hasPreDeloadBackup = remember(vm.settings) { vm.settings.getPreDeloadBackup().isNotBlank() }
+    var hasPreDeloadBackup by remember { mutableStateOf(vm.settings.getPreDeloadBackup().isNotBlank()) }
 
     val today = todayWeekday()
     val plannedWeekdays = remember(days) { days.map { it.weekday }.filter { it in 1..7 }.toSet() }
@@ -150,24 +148,6 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
             dismissButton = { TextButton(onClick = { showCancelActiveDialog = false }) { Text("Vazgeç") } }
         )
     }
-    if (showDeloadDesignDialog) {
-        DeloadDesignDialog(
-            routineName = routine?.name ?: "Aktif program",
-            routineDays = days,
-            allItems = allItems,
-            exercises = exercises,
-            allSets = allSets,
-            workouts = workouts,
-            onDismiss = { showDeloadDesignDialog = false },
-            onApplyDeload = { reducePct, customAdjustments ->
-                vm.applyDeloadToActiveRoutine(
-                    reduceWeightsPercent = reducePct,
-                    customAdjustments = customAdjustments
-                ) { showDeloadDesignDialog = false }
-            }
-        )
-    }
-
     fun goTab(route: String) = nav.navigate(route) {
         popUpTo(Routes.HOME) { saveState = true }
         launchSingleTop = true
@@ -181,15 +161,16 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
     ) {
         item { HomeHeader(name, stats.streakWeeks) { nav.navigate(Routes.PROFILE) } }
 
-        if (deloadRecommendation.shouldDeloadNow || deloadRecommendation.isCurrentlyDeloadWeek) {
+        if (deloadRecommendation.shouldDeloadNow || deloadRecommendation.isCurrentlyDeloadWeek || hasPreDeloadBackup) {
             item {
                 Box(Modifier.padding(horizontal = 16.dp)) {
-                    DeloadAlertBox(
+                    DeloadCard(
                         recommendation = deloadRecommendation,
                         hasBackup = hasPreDeloadBackup,
-                        onToggleDeloadWeek = { on -> vm.setDeloadWeekActive(on) },
-                        onOpenDesignDialog = { showDeloadDesignDialog = true },
-                        onRestoreOriginalRoutine = { vm.restorePreDeloadRoutine() }
+                        onStartDeload = { vm.startDeloadWeek() },
+                        onEndDeload = { vm.endDeloadWeek() },
+                        onDismissChange = { vm.setDeloadDismissed(it) },
+                        onRestoreBackup = { vm.restoreRoutineBackupOnly { hasPreDeloadBackup = false } }
                     )
                 }
             }
@@ -210,7 +191,7 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
                         day = nextDay,
                         items = allItems.filter { it.dayId == nextDay.id },
                         plan = plan,
-                        cycleLabel = cycleLabel(deloadRecommendation.currentCycleWeek, deloadRecommendation.recommendedWeek),
+                        cycleLabel = cycleLabel(deloadRecommendation),
                         onStart = { vm.startWorkout(nextDay) { id -> nav.navigate("${Routes.WORKOUT}/$id") } }
                     )
                     doneToday && todayWorkout != null -> DoneHero(
@@ -583,8 +564,13 @@ private fun DoneTile(value: String, label: String, valueColor: Color, modifier: 
 }
 
 /** Mezosiklus haftası: "HAFTA 3 / 5". Bilgi yoksa null. */
-private fun cycleLabel(week: Int, length: Int): String? =
-    if (week > 0 && length > 0) "HAFTA ${week.coerceAtMost(length)} / $length" else null
+/** "HAFTA 3/5 · RIR 1-2" — blok içindeki yer ve hedef zorluk. */
+private fun cycleLabel(rec: com.example.core.DeloadAdvisor.DeloadRecommendation): String? {
+    if (rec.currentCycleWeek <= 0) return null
+    val effort = com.example.core.TrainingBlock.effort(rec.currentCycleWeek, rec.loadWeeks, rec.isCurrentlyDeloadWeek)
+    return if (rec.isCurrentlyDeloadWeek) "DELOAD · ${effort.rir}"
+    else "HAFTA ${rec.currentCycleWeek.coerceAtMost(rec.loadWeeks)}/${rec.loadWeeks} · ${effort.rir}"
+}
 
 @Composable
 private fun PlanRow(name: String, rx: Prescription, divider: Boolean) {

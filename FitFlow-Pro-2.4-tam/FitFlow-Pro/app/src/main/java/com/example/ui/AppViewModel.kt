@@ -231,10 +231,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         allSets.map { ProgressAnalytics.weeklyRpe(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** 6-8 haftalık zorlanma ve deload tavsiye durumu. */
+    /** Deload kararı: aktif hafta, performans sinyali, planlı blok ve kullanıcının yok sayması. */
     val deloadRecommendation: StateFlow<DeloadAdvisor.DeloadRecommendation> =
-        combine(workouts, allSets, settings.activeDeloadWeekStart) { wList, sList, deloadStart ->
-            DeloadAdvisor.analyze(wList, sList, deloadStart)
+        combine(
+            workouts, allSets, settings.activeDeloadWeekStart,
+            settings.deloadDismissedWeek, settings.blockLoadWeeks
+        ) { wList, sList, deloadStart, dismissed, blockWeeks ->
+            DeloadAdvisor.analyze(wList, sList, deloadStart, dismissed, blockWeeks)
         }.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -246,14 +249,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 strainLevel = "Düşük",
                 reasonTitle = "",
                 reasonDetails = emptyList(),
-                adviceList = listOf(
-                    DeloadAdvisor.ADVICE_KEEP_OR_REDUCE_WEIGHT,
-                    DeloadAdvisor.ADVICE_HALVE_SETS,
-                    DeloadAdvisor.ADVICE_REPS_8_10
-                ),
                 isCurrentlyDeloadWeek = false
             )
         )
+
+    /** Aktif seansın blok içindeki hedef zorluğu (RIR). */
+    val sessionEffort: StateFlow<com.example.core.TrainingBlock.Effort?> =
+        combine(deloadRecommendation, activeWorkout) { rec, w ->
+            if (w == null) null
+            else com.example.core.TrainingBlock.effort(rec.currentCycleWeek, rec.loadWeeks, w.isDeload)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun muscleLoadsSince(sinceMillis: Long, periodWeeks: Float): List<MuscleLoad> =
         ProgressAnalytics.muscleLoads(allSets.value, exercises.value, sinceMillis, periodWeeks)
@@ -473,6 +478,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             settings.setActiveDeloadWeek(currentWeek)
         } else {
             settings.clearActiveDeloadWeek()
+        }
+    }
+
+    /** Bu haftanın deload önerisini yok say (true) ya da geri getir (false). */
+    fun setDeloadDismissed(dismissed: Boolean) {
+        settings.setDeloadDismissedWeek(if (dismissed) startOfWeek(System.currentTimeMillis()) else 0L)
+    }
+
+    /** Deload'u bu hafta başlat; öneri yok sayılmışsa geri alınır. */
+    fun startDeloadWeek() {
+        settings.setDeloadDismissedWeek(0L)
+        settings.setActiveDeloadWeek(startOfWeek(System.currentTimeMillis()))
+    }
+
+    /** Deload'u bitir: bu hafta yeniden öneri gösterilmez. */
+    fun endDeloadWeek() {
+        settings.clearActiveDeloadWeek()
+        settings.setDeloadDismissedWeek(startOfWeek(System.currentTimeMillis()))
+    }
+
+    fun setBlockLoadWeeks(weeks: Int) = settings.setBlockLoadWeeks(weeks.coerceIn(0, 12))
+
+    /** 2.8 öncesi "Deload tasarla" ile değiştirilmiş program varsa orijinalini geri yükler. */
+    fun restoreRoutineBackupOnly(onDone: () -> Unit = {}) {
+        val backup = settings.getPreDeloadBackup()
+        viewModelScope.launch {
+            if (backup.isNotBlank()) {
+                repo.restorePreDeloadRoutine(backup)
+                settings.setPreDeloadBackup("")
+            }
+            onDone()
         }
     }
 

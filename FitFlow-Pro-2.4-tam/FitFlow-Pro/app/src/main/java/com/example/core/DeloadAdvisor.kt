@@ -4,70 +4,84 @@ import com.example.data.WorkoutEntity
 import com.example.data.WorkoutSetEntity
 
 /**
- * Akıllı Deload (Toparlanma) Tavsiye ve Zorlanma Analiz Motoru.
+ * Deload (toparlanma haftası) karar motoru — 2.8.
  *
- * Kasların ve merkezi sinir sisteminin zorlanma seviyesine, haftalık tonaj/set artışına
- * ve toparlanma hissiyatına göre 6-8 hafta aralığında akıllı deload zamanlamasına karar verir.
+ * Karar sırası:
+ *  1. Kullanıcı bu haftayı deload olarak başlattıysa → aktif.
+ *  2. Performans sinyali (gerileyen / platodaki ana hareketler, yüksek RPE) → öneri (4. haftadan itibaren).
+ *  3. Planlı blok ayarlıysa (ör. 5 hafta yüklenme) → blok bitince öneri.
+ *     Otomatik moddaysa yorgunluk puanına göre 6-8. hafta hedeflenir; öneri hedef + 2 haftada gelir.
+ *
+ * Kullanıcı öneriyi o hafta için yok sayabilir; pazartesi yeniden değerlendirilir.
+ * Tonaj artışı yorgunluk sayılmaz — ilerleme ceza değildir.
  */
 object DeloadAdvisor {
 
-    const val ADVICE_KEEP_OR_REDUCE_WEIGHT = "Ağırlık koru veya Max %10 düşür"
-    const val ADVICE_HALVE_SETS = "Set sayısını yarıya indir"
-    const val ADVICE_REPS_8_10 = "Tekrar 8-10'da bırak"
+    /** Deload haftasında seansların otomatik uyguladığı kurallar (ProgressionEngine ile birebir). */
+    const val DELOAD_SUMMARY = "Yük ~%10 az · setler yarıda · merdivenin ilk basamağı"
+    const val DELOAD_EFFORT = "Her sette en az 4 tekrar yedekte bırak."
 
     data class DeloadRecommendation(
+        /** Kart gösterilmeli mi (öneri ya da aktif deload). Yok sayılsa bile öneri true kalır. */
         val shouldDeloadNow: Boolean,
+        /** Döngünün kaçıncı haftası (son deload'dan sonra, 1'den başlar). */
         val currentCycleWeek: Int,
+        /** Deload'un hedeflendiği hafta (yüklenme haftaları + 1). */
         val recommendedWeek: Int,
-        val strainScore: Int,               // 0..100
-        val strainLevel: String,            // "Yüksek", "Orta", "Düşük"
+        val strainScore: Int,
+        val strainLevel: String,
+        /** Tek satırlık neden — kartta görünen. */
         val reasonTitle: String,
+        /** "Neden?" altında açılan ayrıntılar. */
         val reasonDetails: List<String>,
-        val adviceList: List<String>,
         val isCurrentlyDeloadWeek: Boolean,
-        /** Öneri takvim yerine gerçek performans düşüşünden mi geliyor? */
-        val performanceTriggered: Boolean = false
-    )
+        val performanceTriggered: Boolean = false,
+        /** Kullanıcı bu haftaki öneriyi yok saydı mı? */
+        val dismissedThisWeek: Boolean = false,
+        /** Planlı blok uzunluğu (yüklenme haftası); 0 = otomatik. */
+        val blockLoadWeeks: Int = 0
+    ) {
+        /** Yüklenme haftası sayısı (planlı ya da otomatik tahmin). */
+        val loadWeeks: Int get() = (recommendedWeek - 1).coerceAtLeast(1)
+        /** Öneri kartı açık gösterilsin mi (yok sayılmadıysa). */
+        val showRecommendation: Boolean get() = shouldDeloadNow && !isCurrentlyDeloadWeek && !dismissedThisWeek
+    }
 
     fun analyze(
         workouts: List<WorkoutEntity>,
         allSets: List<WorkoutSetEntity>,
         activeDeloadWeekStart: Long,
+        dismissedWeekStart: Long = 0L,
+        blockLoadWeeks: Int = 0,
         now: Long = System.currentTimeMillis()
     ): DeloadRecommendation {
+        val week = 7 * 86_400_000L
         val currentWeekStart = startOfWeek(now)
-        val isExplicitDeloadActive = (activeDeloadWeekStart > 0L && activeDeloadWeekStart == currentWeekStart) ||
-                workouts.any { it.startedAt >= currentWeekStart && it.isDeload }
+        val isActive = activeDeloadWeekStart > 0L && activeDeloadWeekStart == currentWeekStart
 
-        val finishedWorkouts = workouts.filter { it.isFinished }
+        val finished = workouts.filter { it.isFinished }
 
-        // En son deload yapılan seans veya tarih
-        val lastDeloadWorkout = finishedWorkouts.filter { it.isDeload }.maxByOrNull { it.startedAt }
-        val cycleStartTime = when {
-            lastDeloadWorkout != null -> {
-                // Son deload'un ertesi haftası yeni döngü başlangıcı kabul edilir
-                startOfWeek(lastDeloadWorkout.startedAt) + 7 * 86_400_000L
-            }
-            finishedWorkouts.isNotEmpty() -> {
-                startOfWeek(finishedWorkouts.minOf { it.startedAt })
-            }
+        // Döngü başlangıcı: son deload haftasının ertesi haftası (bu haftaki deload hariç).
+        val lastDeloadWeek = listOfNotNull(
+            finished.filter { it.isDeload }.maxOfOrNull { startOfWeek(it.startedAt) }?.takeIf { it < currentWeekStart },
+            activeDeloadWeekStart.takeIf { it in 1 until currentWeekStart }
+        ).maxOrNull()
+        val cycleStart = when {
+            lastDeloadWeek != null -> lastDeloadWeek + week
+            finished.isNotEmpty() -> startOfWeek(finished.minOf { it.startedAt })
             else -> currentWeekStart
         }
+        val cycleWeek = (((now - cycleStart).coerceAtLeast(0L) / week).toInt() + 1).coerceAtLeast(1)
 
-        val millisDiff = (now - cycleStartTime).coerceAtLeast(0L)
-        val weeksElapsed = (millisDiff / (7 * 86_400_000L)).toInt() + 1
-        val currentCycleWeek = weeksElapsed.coerceAtLeast(1)
+        val cycleWorkouts = finished.filter { it.startedAt >= cycleStart && !it.isDeload }
+        val cycleIds = cycleWorkouts.map { it.id }.toHashSet()
+        val cycleSets = allSets.filter { it.workoutId in cycleIds }
 
-        // Zorlanma Faktörleri Analizi (Hacim artışı, tonaj artışı, yorgunluk/feeling, RPE)
-        val cycleWorkouts = finishedWorkouts.filter { it.startedAt >= cycleStartTime && !it.isDeload }
-        val cycleSets = allSets.filter { s -> cycleWorkouts.any { it.id == s.workoutId } }
+        val strain = evaluateStrain(cycleWorkouts, cycleSets, cycleStart, now)
+        val planned = blockLoadWeeks > 0
+        val recommendedWeek = if (planned) blockLoadWeeks + 1 else strain.autoWeek
 
-        val (strainScore, strainLevel, reasonTitle, details, recommendedWeek) =
-            evaluateStrain(currentCycleWeek, cycleWorkouts, cycleSets, now)
-
-        // Performansa dayalı sinyal: gerileyen / platoya giren ana hareketler ve RPE birikimi.
-        // Takvim tek başına deload tetiklemez; yalnızca uzun süre (öneri + 2 hafta) sinyal
-        // gelmezse güvenlik amaçlı devreye girer.
+        // Performans sinyali: gerileyen / platodaki hareketler, RPE birikimi.
         val histories = cycleSets
             .filter { it.isCompleted && !it.isWarmup && it.reps > 0 }
             .groupBy { it.exerciseName }
@@ -77,160 +91,135 @@ object DeloadAdvisor {
                 }
             }
         val recentRpes = cycleSets
-            .filter { it.isCompleted && !it.isWarmup && it.rpe > 0f && it.performedAt >= now - 14 * 86_400_000L }
+            .filter { it.isCompleted && !it.isWarmup && it.rpe > 0f && it.performedAt >= now - 2 * week }
             .map { it.rpe }
         val signal = ReadinessEngine.evaluate(histories, recentRpes)
-        val performanceTriggered = signal.deloadSuggested && currentCycleWeek >= 4 && !isExplicitDeloadActive
-        val safetyCap = currentCycleWeek >= recommendedWeek + 2
 
-        val shouldDeloadNow = isExplicitDeloadActive || performanceTriggered || safetyCap
-        val finalTitle = when {
-            performanceTriggered -> "Performans verilerin toparlanma ihtiyacını gösteriyor — bu hafta deload önerilir."
-            safetyCap -> "Uzun süredir kesintisiz yüklenmedesin; güvenlik amaçlı deload önerilir."
-            else -> reasonTitle
+        val performanceTriggered = !isActive && signal.deloadSuggested && cycleWeek >= 4
+        val scheduleDue = !isActive && if (planned) cycleWeek >= recommendedWeek else cycleWeek >= recommendedWeek + 2
+        val shouldDeload = isActive || performanceTriggered || scheduleDue
+
+        val title = when {
+            isActive -> "Toparlanma haftası: hafif çalış, bir sonraki blokta daha güçlü dön."
+            performanceTriggered -> signal.reasons.firstOrNull()
+                ?: "Performansın düşüyor; toparlanma zamanı."
+            scheduleDue && planned -> "$blockLoadWeeks haftalık yüklenme bloğu tamamlandı."
+            scheduleDue -> "${cycleWeek - 1} haftadır kesintisiz yükleniyorsun."
+            else -> ""
         }
-        val finalDetails = if (performanceTriggered) signal.reasons + details else details
+        val details = buildList {
+            if (performanceTriggered) addAll(signal.reasons.drop(1))
+            addAll(strain.details)
+            if (planned) add("Planın: $blockLoadWeeks hafta yüklenme + 1 hafta deload. Şu an döngünün $cycleWeek. haftası.")
+            else add("Otomatik mod: yorgunluk seviyene göre deload ${recommendedWeek}. haftaya hedeflendi. Program ekranından sabit blok belirleyebilirsin.")
+        }
 
         return DeloadRecommendation(
-            shouldDeloadNow = shouldDeloadNow,
-            currentCycleWeek = currentCycleWeek,
+            shouldDeloadNow = shouldDeload,
+            currentCycleWeek = cycleWeek,
             recommendedWeek = recommendedWeek,
-            strainScore = strainScore,
-            strainLevel = strainLevel,
-            reasonTitle = finalTitle,
-            reasonDetails = finalDetails,
-            adviceList = listOf(
-                ADVICE_KEEP_OR_REDUCE_WEIGHT,
-                ADVICE_HALVE_SETS,
-                ADVICE_REPS_8_10
-            ),
-            isCurrentlyDeloadWeek = isExplicitDeloadActive,
-            performanceTriggered = performanceTriggered
+            strainScore = strain.score,
+            strainLevel = strain.level,
+            reasonTitle = title,
+            reasonDetails = details,
+            isCurrentlyDeloadWeek = isActive,
+            performanceTriggered = performanceTriggered,
+            dismissedThisWeek = !isActive && dismissedWeekStart == currentWeekStart,
+            blockLoadWeeks = blockLoadWeeks
         )
     }
 
-    private data class Evaluation(
-        val strainScore: Int,
-        val strainLevel: String,
-        val reasonTitle: String,
-        val details: List<String>,
-        val recommendedWeek: Int
-    )
+    private data class Strain(val score: Int, val level: String, val autoWeek: Int, val details: List<String>)
 
+    /**
+     * Yorgunluk puanı: seans sonu hissiyatı, RPE yoğunluğu ve döngü içindeki hacim birikimi.
+     * Tonaj artışı (ilerleme) puana eklenmez.
+     */
     private fun evaluateStrain(
-        currentCycleWeek: Int,
         workouts: List<WorkoutEntity>,
         sets: List<WorkoutSetEntity>,
+        cycleStart: Long,
         now: Long
-    ): Evaluation {
+    ): Strain {
+        val week = 7 * 86_400_000L
         val details = mutableListOf<String>()
-        var score = 30 // Temel puan
+        var score = 30
+        val working = sets.filter { it.isCompleted && !it.isWarmup }
 
-        val oneWeekMillis = 7 * 86_400_000L
-        val lastWeekWorkouts = workouts.filter { it.startedAt >= (now - oneWeekMillis) }
-        val prevWeekWorkouts = workouts.filter { it.startedAt in (now - 2 * oneWeekMillis) until (now - oneWeekMillis) }
-
-        // 1. Set Artışı ve Hacim Baskısı
-        val recentEffectiveSets = sets.filter { s ->
-            s.isCompleted && s.performedAt >= (now - 2 * oneWeekMillis) && !s.isWarmup
-        }
-        val weeklyAvgSets = (recentEffectiveSets.size / 2).coerceAtLeast(0)
-        when {
-            weeklyAvgSets >= 45 -> {
-                score += 25
-                details.add("Yüksek haftalık set hacmi (~$weeklyAvgSets set/hafta) kas toparlanmasını zorluyor.")
-            }
-            weeklyAvgSets >= 32 -> {
-                score += 15
-                details.add("Dengeli ancak birikimli set hacmi (~$weeklyAvgSets set/hafta).")
-            }
-            else -> {
-                score += 5
-            }
+        // 1) Hissiyat (1..5) — son 2 hafta
+        val feelings = workouts.filter { it.startedAt >= now - 2 * week && it.feeling > 0 }.map { it.feeling }
+        if (feelings.size >= 2) {
+            val avg = feelings.average()
+            val txt = String.format(java.util.Locale("tr"), "%.1f", avg)
+            if (avg <= 2.2) { score += 25; details.add("Seans sonu hissiyatın düşük (ortalama $txt/5).") }
+            else if (avg <= 3.0) { score += 15; details.add("Seans sonu hissiyatın orta (ortalama $txt/5).") }
         }
 
-        // 2. Tonaj / Ağırlık Artışı Eğilimi
-        val lastWeekTonnage = lastWeekWorkouts.sumOf { w ->
-            sets.filter { it.workoutId == w.id && it.isCompleted }.sumOf { (it.weightKg * it.reps).toDouble() }
-        }
-        val prevWeekTonnage = prevWeekWorkouts.sumOf { w ->
-            sets.filter { it.workoutId == w.id && it.isCompleted }.sumOf { (it.weightKg * it.reps).toDouble() }
+        // 2) RPE 9+ oranı — son 2 hafta
+        val rpeSets = working.filter { it.rpe > 0f && it.performedAt >= now - 2 * week }
+        if (rpeSets.size >= 6) {
+            val ratio = rpeSets.count { it.rpe >= 9f }.toFloat() / rpeSets.size
+            if (ratio >= 0.35f) { score += 20; details.add("Setlerinin %${(ratio * 100).toInt()}'i RPE 9 ve üstü (tükenişe yakın).") }
         }
 
-        if (prevWeekTonnage > 0 && lastWeekTonnage > 0) {
-            val growthPct = ((lastWeekTonnage - prevWeekTonnage) / prevWeekTonnage) * 100.0
-            if (growthPct >= 12.0) {
-                score += 25
-                details.add("Son haftada %${growthPct.toInt()} tonaj/ağırlık artışı ile kaslar yoğun progressive overload altında.")
-            } else if (growthPct >= 5.0) {
-                score += 15
-                details.add("Ağırlık ve tonaj istikrarlı şekilde artış trendinde.")
+        // 3) Hacim birikimi — son haftanın set sayısı, döngünün ilk iki haftasına göre
+        val firstWeeks = working.count { it.performedAt in cycleStart until cycleStart + 2 * week } / 2f
+        val lastWeek = working.count { it.performedAt >= now - week }.toFloat()
+        if (firstWeeks >= 8f && now - cycleStart >= 3 * week) {
+            val growth = (lastWeek - firstWeeks) / firstWeeks
+            if (growth >= 0.25f) {
+                score += 10
+                details.add("Haftalık set sayın döngü başına göre %${(growth * 100).toInt()} arttı (${firstWeeks.toInt()} → ${lastWeek.toInt()}).")
             }
         }
 
-        // 3. Yorgunluk Hissiyatı (Feeling 1..5)
-        val recentFeelings = workouts.filter { it.startedAt >= (now - 2 * oneWeekMillis) && it.feeling > 0 }
-            .map { it.feeling }
-        if (recentFeelings.isNotEmpty()) {
-            val avgFeeling = recentFeelings.average()
-            if (avgFeeling <= 2.2) {
-                score += 25
-                details.add("Antrenman sonu toparlanma hissiyatı düşük (Ortalama ${String.format(java.util.Locale.US, "%.1f", avgFeeling)}/5), merkezi yorgunluk birikmiş.")
-            } else if (avgFeeling <= 3.0) {
-                score += 15
-                details.add("Orta seviye antrenman yorgunluğu gözlemlendi.")
-            }
+        val final = score.coerceIn(15, 95)
+        return when {
+            final >= 65 -> Strain(final, "Yüksek", 6, details)
+            final >= 45 -> Strain(final, "Orta", 7, details)
+            else -> Strain(final, "Düşük", 8, details)
         }
+    }
+}
 
-        // 4. RPE Yoğunluğu
-        val recentRpeSets = recentEffectiveSets.filter { it.rpe > 0f }
-        if (recentRpeSets.isNotEmpty()) {
-            val highRpeCount = recentRpeSets.count { it.rpe >= 9.0f }
-            val highRpeRatio = highRpeCount.toFloat() / recentRpeSets.size
-            if (highRpeRatio >= 0.35f) {
-                score += 20
-                details.add("Setlerin %${(highRpeRatio * 100).toInt()}'i RPE 9+ (tükenişe yakın) icra edildi.")
-            }
+/**
+ * Blok içindeki hedef zorluk (RIR = yedekte kalan tekrar).
+ * Blok başında daha fazla yedek, sonuna doğru tükenişe yaklaşılır; deload'da bol yedek.
+ */
+object TrainingBlock {
+
+    data class Effort(val rir: String, val hint: String)
+
+    fun effort(cycleWeek: Int, loadWeeks: Int, deload: Boolean): Effort {
+        if (deload) return Effort("RIR 4+", DeloadAdvisor.DELOAD_EFFORT)
+        val n = loadWeeks.coerceAtLeast(1)
+        val f = if (n <= 1) 1f else (cycleWeek - 1).toFloat() / (n - 1)
+        return when {
+            f < 0.3f -> Effort("RIR 2-3", "Blok başı: setleri 2-3 tekrar yedekte bitir.")
+            f < 0.8f -> Effort("RIR 1-2", "Bloğun ortası: 1-2 tekrar yedekte bırak.")
+            else -> Effort("RIR 0-1", "Blok sonu: tükenişe 0-1 tekrar kala bitir.")
         }
+    }
 
-        val finalScore = score.coerceIn(15, 95)
-        val strainLevel: String
-        val recommendedWeek: Int
-        val reasonTitle: String
-
-        when {
-            finalScore >= 65 -> {
-                strainLevel = "Yüksek"
-                recommendedWeek = 6
-                reasonTitle = "Yüksek kas zorlanması ve kümülatif yorgunluk nedeniyle 6. haftada deload tavsiye edilir."
-                if (details.isEmpty()) {
-                    details.add("Son haftalardaki yoğun antrenman temposu toparlanma ihtiyacını 6. haftaya çekti.")
-                }
+    /**
+     * Isınma rampası (ağırlık × tekrar). Barbell: klasik %40-85 rampası (bar ağırlığından başlar).
+     * Dambıl / makine: %50×8 ve %75×3, ekipmanın artış adımına yuvarlanır.
+     */
+    fun warmupRamp(work: Float, kind: LoadKind, profile: LoadingProfile): List<Pair<Float, Int>> {
+        if (work <= 0f) return emptyList()
+        return when (kind) {
+            LoadKind.BARBELL ->
+                if (work < profile.barKg + 10f) emptyList()
+                else Calc.warmupScheme(work, profile.barKg).filter { it.first < work }
+            LoadKind.DUMBBELL, LoadKind.MACHINE -> {
+                val step = profile.step(kind).takeIf { it > 0f } ?: 1f
+                if (work < step * 4) emptyList()
+                else listOf(0.5f to 8, 0.75f to 3)
+                    .map { (p, r) -> Calc.roundToNearest(work * p, step) to r }
+                    .filter { it.first > 0f && it.first < work }
+                    .distinctBy { it.first }
             }
-            finalScore in 45..64 -> {
-                strainLevel = "Orta"
-                recommendedWeek = 7
-                reasonTitle = "Orta seviye yüklenme tespit edildi. 7. haftada deload yapılması optimum toparlanma sağlar."
-                if (details.isEmpty()) {
-                    details.add("Dengeli aşırı yükleme döngüsü 7. haftada süperkompanzasyon için toparlanma gerektirir.")
-                }
-            }
-            else -> {
-                strainLevel = "Düşük / Dengeli"
-                recommendedWeek = 8
-                reasonTitle = "Dengeli adaptasyon sağlandı. 8 haftalık hipertrofi döngüsü tamamlandığında deload önerilir."
-                if (details.isEmpty()) {
-                    details.add("Vücut antrenman stresini iyi tolere ediyor, 8 haftalık tam blok sonunda deload uygundur.")
-                }
-            }
+            LoadKind.BODYWEIGHT, LoadKind.OTHER -> emptyList()
         }
-
-        return Evaluation(
-            strainScore = finalScore,
-            strainLevel = strainLevel,
-            reasonTitle = reasonTitle,
-            details = details,
-            recommendedWeek = recommendedWeek
-        )
     }
 }

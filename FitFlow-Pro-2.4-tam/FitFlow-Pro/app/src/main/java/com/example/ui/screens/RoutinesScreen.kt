@@ -105,8 +105,8 @@ import com.example.ui.components.OverlineText
 import com.example.ui.components.RoundIconButton
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.WeakLinkRecommendationDialog
-import com.example.ui.components.DeloadAlertBox
-import com.example.ui.components.DeloadDesignDialog
+import com.example.ui.components.BlockSettingsDialog
+import com.example.ui.components.BlockStatusCard
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
@@ -136,8 +136,8 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
     val deloadRecommendation by vm.deloadRecommendation.collectAsStateWithLifecycle()
     val allSets by vm.allSets.collectAsStateWithLifecycle()
     val workouts by vm.workouts.collectAsStateWithLifecycle()
-    var showDeloadDesignDialog by remember { mutableStateOf(false) }
-    val hasPreDeloadBackup = remember(vm.settings) { vm.settings.getPreDeloadBackup().isNotBlank() }
+    var showBlockDialog by remember { mutableStateOf(false) }
+    val blockLoadWeeks by vm.settings.blockLoadWeeks.collectAsStateWithLifecycle()
 
     var showAddRoutine by remember { mutableStateOf(false) }
     var showAddDay by remember { mutableStateOf(false) }
@@ -160,23 +160,11 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
         )
     }
 
-    if (showDeloadDesignDialog) {
-        DeloadDesignDialog(
-            routineName = active?.name ?: "Aktif Program",
-            routineDays = days,
-            allItems = allItems,
-            exercises = exercises,
-            allSets = allSets,
-            workouts = workouts,
-            onDismiss = { showDeloadDesignDialog = false },
-            onApplyDeload = { reducePct, customAdjustments ->
-                vm.applyDeloadToActiveRoutine(
-                    reduceWeightsPercent = reducePct,
-                    customAdjustments = customAdjustments
-                ) {
-                    showDeloadDesignDialog = false
-                }
-            }
+    if (showBlockDialog) {
+        BlockSettingsDialog(
+            current = blockLoadWeeks,
+            onSave = { vm.setBlockLoadWeeks(it); showBlockDialog = false },
+            onDismiss = { showBlockDialog = false }
         )
     }
 
@@ -220,8 +208,8 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                     )
                     if (active != null) {
                         DropdownMenuItem(
-                            text = { Text("Deload tasarla") },
-                            onClick = { headerMenu = false; showDeloadDesignDialog = true },
+                            text = { Text("Blok ve deload") },
+                            onClick = { headerMenu = false; showBlockDialog = true },
                             leadingIcon = { Icon(Icons.Default.History, null) }
                         )
                     }
@@ -233,16 +221,9 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 110.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            if (active != null && (deloadRecommendation.shouldDeloadNow || deloadRecommendation.isCurrentlyDeloadWeek)) {
+            if (active != null) {
                 item {
-                    DeloadAlertBox(
-                        recommendation = deloadRecommendation,
-                        hasBackup = hasPreDeloadBackup,
-                        onToggleDeloadWeek = { activeDeload -> vm.setDeloadWeekActive(activeDeload) },
-                        onOpenDesignDialog = { showDeloadDesignDialog = true },
-                        onRestoreOriginalRoutine = { vm.restorePreDeloadRoutine() },
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
+                    BlockStatusCard(deloadRecommendation, onClick = { showBlockDialog = true })
                 }
             }
             item {

@@ -128,6 +128,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     val dbStep by vm.settings.dumbbellStep.collectAsStateWithLifecycle()
     val machineStep by vm.settings.machineStep.collectAsStateWithLifecycle()
     val profile = remember(bar, barStep, dbStep, machineStep) { LoadingProfile(bar, barStep, dbStep, machineStep) }
+    val effort by vm.sessionEffort.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showPicker by remember { mutableStateOf(false) }
@@ -170,6 +171,10 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     val volume = exercises.sumOf { it.volume.toDouble() }.toFloat()
     // Sıradaki set: ilk tamamlanmamış set (üstten aşağı).
     val nextSetId = exercises.asSequence().flatMap { it.sets.asSequence() }.firstOrNull { !it.isCompleted }?.id
+    // Dambıl / makinede ısınma yalnızca o kas grubunun seanstaki ilk hareketinde önerilir.
+    val firstOfMuscle = remember(exercises) {
+        exercises.filter { !it.isWarmup }.groupBy { it.muscleGroup }.values.map { it.first().order }.toSet()
+    }
 
     Column(Modifier.fillMaxSize()) {
         SessionTopBar(
@@ -193,11 +198,15 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 200.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            effort?.let { ef ->
+                item(key = "effort") { EffortBanner(ef, workout!!.isDeload) }
+            }
             itemsIndexed(exercises, key = { _, e -> "${e.exerciseId}_${e.order}" }) { index, se ->
                 ExerciseLogCard(
                     se = se,
                     number = index + 1,
                     profile = profile,
+                    firstOfMuscle = se.order in firstOfMuscle,
                     nextSetId = nextSetId,
                     fallbackSuggestion = if (se.prescription == null) vm.suggestionFor(se) else "",
                     isHighlighted = highlightedId == se.exerciseId,
@@ -481,6 +490,7 @@ private fun ExerciseLogCard(
     se: SessionExercise,
     number: Int,
     profile: LoadingProfile,
+    firstOfMuscle: Boolean = true,
     nextSetId: Long?,
     fallbackSuggestion: String,
     isHighlighted: Boolean = false,
@@ -701,13 +711,22 @@ private fun ExerciseLogCard(
             }
         }
 
-        /* Barbell ısınma rampası + plaka dizilimi */
-        val workWeight = se.sets.firstOrNull { !it.isWarmup }?.weightKg ?: 0f
-        if (!se.isWarmup && !isDuration && !se.isDone && loadKindOf(se.equipment) == LoadKind.BARBELL &&
-            workWeight >= profile.barKg + 10f && se.completedSets == 0
-        ) {
-            Spacer(Modifier.height(8.dp))
-            WarmupRamp(workWeight, profile.barKg)
+        /* Isınma rampası (barbell: her ana harekette + plaka dizilimi; dambıl/makine: kasın ilk hareketinde) */
+        val workWeight = (se.sets.firstOrNull { !it.isWarmup }?.weightKg ?: 0f)
+            .takeIf { it > 0f } ?: (rx?.weight ?: 0f)
+        val kind = loadKindOf(se.equipment)
+        val scheme = remember(se.name, se.muscleGroup, se.equipment, se.trackingType) {
+            com.example.core.RepScheme.classify(se.name, se.muscleGroup, se.equipment, se.trackingType)
+        }
+        val rampEligible = !se.isWarmup && !isDuration && !isRepsOnly && !se.isDone && se.completedSets == 0 &&
+            scheme != null && scheme != com.example.core.RepScheme.ISOLATION &&
+            (kind == LoadKind.BARBELL || firstOfMuscle)
+        if (rampEligible) {
+            val ramp = com.example.core.TrainingBlock.warmupRamp(workWeight, kind, profile)
+            if (ramp.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                WarmupRamp(ramp, workWeight, if (kind == LoadKind.BARBELL) profile.barKg else null)
+            }
         }
 
         Spacer(Modifier.height(10.dp))
@@ -832,9 +851,8 @@ private fun PrescriptionPanel(rx: Prescription) {
 }
 
 @Composable
-private fun WarmupRamp(workWeight: Float, barKg: Float) {
-    val ramp = Calc.warmupScheme(workWeight, barKg).filter { it.first < workWeight }
-    val plates = Calc.plates(workWeight, barKg)
+private fun WarmupRamp(ramp: List<Pair<Float, Int>>, workWeight: Float, barKg: Float?) {
+    val plates = if (barKg != null) Calc.plates(workWeight, barKg) else emptyList()
     Column(
         Modifier
             .fillMaxWidth()
@@ -849,13 +867,31 @@ private fun WarmupRamp(workWeight: Float, barKg: Float) {
                 color = MaterialTheme.fit.muted
             )
         }
-        if (plates.isNotEmpty()) {
+        if (plates.isNotEmpty() && barKg != null) {
             Text(
                 "Taraf başına: " + plates.joinToString(" + ") { it.trimNum() } + "  (bar ${barKg.trimNum()})",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
+    }
+}
+
+/** Seansın hedef zorluğu: "BLOK HEDEFİ · RIR 1-2 — 1-2 tekrar yedekte bırak." */
+@Composable
+private fun EffortBanner(effort: com.example.core.TrainingBlock.Effort, deload: Boolean) {
+    val color = if (deload) Palette.violet else MaterialTheme.fit.accent
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Badge(effort.rir, color)
+        Text(effort.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1f))
     }
 }
 

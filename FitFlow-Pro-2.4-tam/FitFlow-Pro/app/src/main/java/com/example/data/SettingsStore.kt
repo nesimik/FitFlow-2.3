@@ -175,6 +175,22 @@ class SettingsStore(context: Context) {
 
     fun getPreDeloadBackup(): String = prefs.getString(K_PRE_DELOAD_BACKUP, "") ?: ""
 
+    /** Deload önerisinin yok sayıldığı haftanın başlangıcı (0 = yok). */
+    private val _deloadDismissedWeek = flow(prefs.getLong(K_DELOAD_DISMISSED, 0L))
+    val deloadDismissedWeek: StateFlow<Long> = _deloadDismissedWeek.asStateFlow()
+    fun setDeloadDismissedWeek(weekStartMillis: Long) {
+        _deloadDismissedWeek.value = weekStartMillis
+        prefs.edit().putLong(K_DELOAD_DISMISSED, weekStartMillis).apply()
+    }
+
+    /** Planlı blok: yüklenme haftası sayısı (ardından 1 hafta deload). 0 = otomatik. */
+    private val _blockLoadWeeks = flow(prefs.getInt(K_BLOCK_WEEKS, 0))
+    val blockLoadWeeks: StateFlow<Int> = _blockLoadWeeks.asStateFlow()
+    fun setBlockLoadWeeks(v: Int) {
+        _blockLoadWeeks.value = v
+        prefs.edit().putInt(K_BLOCK_WEEKS, v).apply()
+    }
+
     /* ------------------------------- Onboarding ------------------------------ */
     var onboardingDone: Boolean
         get() = prefs.getBoolean(K_ONBOARD, false)
@@ -192,6 +208,7 @@ class SettingsStore(context: Context) {
         const val K_DB_STEP = "db_step"; const val K_MACHINE_STEP = "machine_step"
         const val K_LOCK = "lock"; const val K_PASS = "pass"; const val K_ONBOARD = "onboard"
         const val K_DELOAD_WEEK_START = "deload_week_start"; const val K_PRE_DELOAD_BACKUP = "pre_deload_backup"
+        const val K_DELOAD_DISMISSED = "deload_dismissed_week"; const val K_BLOCK_WEEKS = "block_load_weeks"
         const val K_TARGET_WEIGHT = "target_weight"; const val K_GOAL_LIFT = "goal_lift"; const val K_GOAL_LIFT_KG = "goal_lift_kg"
     }
 }
