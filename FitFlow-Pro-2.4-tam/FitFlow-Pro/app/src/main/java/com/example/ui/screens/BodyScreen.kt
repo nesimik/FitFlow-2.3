@@ -73,6 +73,7 @@ import com.example.ui.theme.parseHex
 @Composable
 fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
     val metrics by vm.bodyMetrics.collectAsStateWithLifecycle()
+    val bodyWeight by vm.settings.weightKg.collectAsStateWithLifecycle()
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<BodyMetricEntity?>(null) }
     var toDelete by remember { mutableStateOf<BodyMetricEntity?>(null) }
@@ -100,6 +101,9 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
         }
 
         if (metrics.isEmpty()) {
+            Box(Modifier.padding(horizontal = 16.dp)) {
+                com.example.ui.components.ProgressPhotosCard(bodyWeight)
+            }
             EmptyState(
                 Icons.Default.MonitorWeight,
                 "Henüz ölçüm yok",
@@ -127,6 +131,10 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
                             Modifier.weight(1f)
                         )
                     }
+                }
+
+                item {
+                    com.example.ui.components.ProgressPhotosCard(latest?.weightKg?.takeIf { it > 0f } ?: bodyWeight)
                 }
 
                 item {

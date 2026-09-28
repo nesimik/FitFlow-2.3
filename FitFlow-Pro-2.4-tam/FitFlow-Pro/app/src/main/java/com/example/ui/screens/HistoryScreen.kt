@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -427,6 +428,8 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
     var toDelete by remember { mutableStateOf(false) }
     var editingDate by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
+    val accentArgb = MaterialTheme.fit.accent.toArgb()
 
     val w = workouts.firstOrNull { it.id == workoutId }
     if (w == null) {
@@ -442,6 +445,29 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
     val grouped = remember(sets) { sets.groupBy { it.exerciseOrder } }
     val volume = Analytics.workoutVolume(workoutId, allSets)
     val workoutPrs = prs.filter { it.workoutId == workoutId }
+
+    if (showShare) {
+        AlertDialog(
+            onDismissRequest = { showShare = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Seansı paylaş", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.example.ui.components.AccentButton("Görsel kart", {
+                        showShare = false
+                        val prNames = workoutPrs.mapNotNull { pr -> sets.firstOrNull { it.exerciseId == pr.exerciseId }?.exerciseName }.toSet()
+                        com.example.ui.ShareCard.share(context, w, sets, volume, prNames, accentArgb)
+                    }, Modifier.fillMaxWidth(), Icons.Default.Share)
+                    com.example.ui.components.GhostButton("Metin olarak", {
+                        showShare = false
+                        shareText(context, buildShareText(w, grouped, volume))
+                    }, Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showShare = false }) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
+        )
+    }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(w.title, formatDateTime(w.startedAt), onBack = { nav.popBackStack() }) {
@@ -463,7 +489,7 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
             }
             Spacer(Modifier.width(8.dp))
             RoundIconButton(Icons.Default.Share, MaterialTheme.fit.muted, 40.dp, MaterialTheme.fit.elevated) {
-                shareText(context, buildShareText(w, grouped, volume))
+                showShare = true
             }
             Spacer(Modifier.width(8.dp))
             RoundIconButton(Icons.Default.Delete, MaterialTheme.fit.danger, 40.dp, MaterialTheme.fit.danger.copy(alpha = 0.12f)) {
