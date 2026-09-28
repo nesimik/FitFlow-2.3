@@ -74,6 +74,7 @@ import com.example.core.MuscleLoad
 import com.example.core.MuscleMap
 import com.example.core.Muscles
 import com.example.core.ProgressAnalytics
+import com.example.core.RepRangeSlice
 import com.example.core.formatDate
 import com.example.core.formatDateShort
 import com.example.core.formatDurationShort
@@ -189,7 +190,17 @@ private fun OverviewTab(vm: AppViewModel, nav: NavHostController) {
     val stagnant by vm.stagnantLifts.collectAsStateWithLifecycle()
     val improving by vm.improvingLifts.collectAsStateWithLifecycle()
     val rpe by vm.weeklyRpe.collectAsStateWithLifecycle()
+    val monthly by vm.monthlySeries.collectAsStateWithLifecycle()
+    val load by vm.trainingLoad.collectAsStateWithLifecycle()
+    val allSets by vm.allSets.collectAsStateWithLifecycle()
     var metric by rememberSaveable { mutableIntStateOf(0) }
+    var period by rememberSaveable { mutableIntStateOf(0) }   // 0 = haftalık, 1 = aylık
+    // Tekrar dağılımı: son 8 hafta (yoksa tüm zamanlar)
+    val repSlices = remember(allSets) {
+        val from = System.currentTimeMillis() - 56L * 86_400_000L
+        ProgressAnalytics.repRangeDistribution(allSets.filter { it.performedAt >= from })
+            .ifEmpty { ProgressAnalytics.repRangeDistribution(allSets) }
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 110.dp),
@@ -217,27 +228,30 @@ private fun OverviewTab(vm: AppViewModel, nav: NavHostController) {
             }
         }
 
-        /* Haftalık hacim / set */
-        if (weekly.isNotEmpty()) {
+        /* Trend: haftalık / aylık × hacim, set, seans, tekrar, süre */
+        val series = if (period == 0) weekly.takeLast(8) else monthly.takeLast(6)
+        if (series.isNotEmpty()) {
             item {
-                FitCard {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Haftalık", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                        Text("son ${minOf(8, weekly.size)} hafta", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    PillTabs(listOf("Hacim", "Set"), metric) { metric = it }
-                    Spacer(Modifier.height(12.dp))
-                    val series = weekly.takeLast(8)
-                    BarChart(
-                        series.map { if (metric == 0) it.volume else it.sets.toFloat() },
-                        series.map { it.label },
-                        suffix = if (metric == 0) " kg" else " set",
-                        height = 160.dp
-                    )
-                }
+                TrendCard(
+                    series = series,
+                    period = period,
+                    metric = metric,
+                    onPeriod = { period = it },
+                    onMetric = { metric = it }
+                )
             }
         }
+
+        /* Yüklenme dengesi (akut : kronik) */
+        item { TrainingLoadCard(load) }
+
+        /* Tekrar dağılımı */
+        if (repSlices.isNotEmpty()) {
+            item { RepRangeCard(repSlices) }
+        }
+
+        /* Zorlanma (RPE) */
+        item { RpeCard(rpe) }
 
         /* Tutarlılık */
         if (adherence.isNotEmpty()) {
@@ -330,6 +344,336 @@ private fun LiftTrendRow(tag: String, color: Color, name: String, detail: String
     }
 }
 
+/* ----------------------------- Özet: yeni kartlar ---------------------------- */
+
+private val TREND_METRICS = listOf("Hacim", "Set", "Seans", "Tekrar", "Süre")
+
+private fun trendValue(p: com.example.core.PeriodPoint, metric: Int): Float = when (metric) {
+    0 -> p.volume
+    1 -> p.sets.toFloat()
+    2 -> p.workouts.toFloat()
+    3 -> p.reps.toFloat()
+    else -> p.durationSec / 60f
+}
+
+private fun trendFormat(v: Float, metric: Int): String = when (metric) {
+    0 -> formatTonnage(v)
+    1 -> "${v.roundToInt()} set"
+    2 -> "${v.roundToInt()} seans"
+    3 -> "${v.roundToInt()} tekrar"
+    else -> "${v.roundToInt()} dk"
+}
+
+/** Haftalık / aylık trend: seçilen metrik, önceki döneme göre değişim, ortalama ve zirve. */
+@Composable
+private fun TrendCard(
+    series: List<com.example.core.PeriodPoint>,
+    period: Int,
+    metric: Int,
+    onPeriod: (Int) -> Unit,
+    onMetric: (Int) -> Unit
+) {
+    val values = series.map { trendValue(it, metric) }
+    val current = values.lastOrNull() ?: 0f
+    val previous = values.getOrNull(values.lastIndex - 1)
+    val nonZero = values.filter { it > 0f }
+    val avg = if (nonZero.isEmpty()) 0f else nonZero.average().toFloat()
+    val peak = values.maxOrNull() ?: 0f
+    val deltaPct = if (previous != null && previous > 0f) Math.round((current - previous) / previous * 100f) else null
+    FitCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Trend", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            SegmentedToggle(listOf("Haftalık", "Aylık"), period, onPeriod)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TREND_METRICS.forEachIndexed { i, label ->
+                com.example.ui.components.ChoiceChip(label, metric == i, { onMetric(i) })
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (period == 0) "Bu hafta" else "Bu ay",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.fit.muted
+                )
+                Text(
+                    trendFormat(current, metric),
+                    style = MaterialTheme.typography.headlineMedium.mono().copy(fontWeight = FontWeight.SemiBold)
+                )
+            }
+            if (deltaPct != null) {
+                Text(
+                    (if (deltaPct >= 0) "+" else "−") + "%" + kotlin.math.abs(deltaPct) +
+                        if (period == 0) " geçen hafta" else " geçen ay",
+                    style = MaterialTheme.typography.labelLarge.mono(),
+                    color = if (deltaPct >= 0) MaterialTheme.fit.success else MaterialTheme.fit.warning,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        BarChart(
+            values = values,
+            labels = series.map { it.label },
+            format = { trendFormat(it, metric) },
+            showAverage = true,
+            height = 150.dp
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TrendStat("Ortalama", trendFormat(avg, metric), Modifier.weight(1f))
+            TrendStat("Zirve", trendFormat(peak, metric), Modifier.weight(1f))
+            TrendStat("Toplam", trendFormat(values.sum(), metric), Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun TrendStat(label: String, value: String, modifier: Modifier) {
+    Column(modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.fit.elevated).padding(horizontal = 10.dp, vertical = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+        Text(value, style = MaterialTheme.typography.labelLarge.mono().copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
+    }
+}
+
+/** Küçük iki/üç seçenekli anahtar (tasarımdaki Ön/Arka anahtarıyla aynı görünüm). */
+@Composable
+private fun SegmentedToggle(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.background)
+            .padding(3.dp)
+    ) {
+        options.forEachIndexed { i, label ->
+            val on = i == selected
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (on) MaterialTheme.fit.elevated else Color.Transparent)
+                    .clickable { onSelect(i) }
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
+            )
+        }
+    }
+}
+
+/** Akut (son 7 gün) : kronik (4 haftalık ortalama) yük oranı, bölgeli gösterge ile. */
+@Composable
+private fun TrainingLoadCard(load: com.example.core.TrainingLoad) {
+    val low = com.example.ui.components.MuscleColors.below
+    val ok = MaterialTheme.fit.success
+    val warn = MaterialTheme.fit.warning
+    val bad = MaterialTheme.fit.danger
+    val statusColor = when {
+        load.chronicWeekly <= 0f -> MaterialTheme.fit.muted
+        load.ratio < 0.75f -> low
+        load.ratio <= 1.3f -> ok
+        load.ratio <= 1.5f -> warn
+        else -> bad
+    }
+    val track = MaterialTheme.fit.elevated
+    FitCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Yüklenme dengesi", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            Text(
+                load.status,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = statusColor,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(statusColor.copy(alpha = 0.13f))
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                if (load.chronicWeekly > 0f) load.ratio.trimNum().replace('.', ',') else "—",
+                style = MaterialTheme.typography.displaySmall.mono().copy(fontWeight = FontWeight.SemiBold)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "son 7 gün ÷ 4 haftalık ortalama",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.fit.muted,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        // Bölgeli gösterge: 0 – 2.0
+        val maxR = 2f
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(22.dp)) {
+            val barH = 10.dp.toPx()
+            val top = (size.height - barH) / 2f
+            fun x(r: Float) = size.width * (r / maxR).coerceIn(0f, 1f)
+            val r = androidx.compose.ui.geometry.CornerRadius(barH / 2f, barH / 2f)
+            drawRoundRect(track, topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(size.width, barH), cornerRadius = r)
+            listOf(0f to 0.75f to low, 0.75f to 1.3f to ok, 1.3f to 1.5f to warn, 1.5f to maxR to bad).forEach { (range, c) ->
+                val (a, b) = range
+                drawRect(
+                    c.copy(alpha = 0.35f),
+                    topLeft = androidx.compose.ui.geometry.Offset(x(a), top),
+                    size = androidx.compose.ui.geometry.Size(x(b) - x(a), barH)
+                )
+            }
+            if (load.chronicWeekly > 0f) {
+                val mx = x(load.ratio).coerceIn(2.dp.toPx(), size.width - 2.dp.toPx())
+                drawRoundRect(
+                    statusColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(mx - 2.dp.toPx(), 0f),
+                    size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            listOf("Düşük", "Dengeli", "Hızlı", "Aşırı").forEachIndexed { i, t ->
+                Text(
+                    t,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.fit.muted,
+                    textAlign = if (i == 0) TextAlign.Start else if (i == 3) TextAlign.End else TextAlign.Center,
+                    modifier = Modifier.weight(if (i == 1) 1.4f else 1f)
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TrendStat("Son 7 gün", formatTonnage(load.acuteVolume), Modifier.weight(1f))
+            TrendStat("Haftalık ort.", formatTonnage(load.chronicWeekly), Modifier.weight(1f))
+            TrendStat("Set (7 gün)", "${load.acuteSets}", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(load.advice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f))
+    }
+}
+
+/** Tekrar aralığı dağılımı: yatay çubuklar, her aralığın amacıyla. */
+@Composable
+private fun RepRangeCard(slices: List<RepRangeSlice>) {
+    val maxShare = (slices.maxOfOrNull { it.share } ?: 1f).coerceAtLeast(0.01f)
+    FitCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Tekrar dağılımı", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            Text("son 8 hafta · ${slices.sumOf { it.sets }} set", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+        }
+        Spacer(Modifier.height(14.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            slices.forEach { sl ->
+                val c = repRangeColor(sl.label)
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(sl.label, style = MaterialTheme.typography.labelLarge.mono().copy(fontWeight = FontWeight.SemiBold), color = c, modifier = Modifier.width(52.dp))
+                        Text(sl.purpose, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1f), maxLines = 1)
+                        Text(
+                            "%${(sl.share * 100).roundToInt()}",
+                            style = MaterialTheme.typography.labelLarge.mono().copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Text(" · ${sl.sets}", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.muted)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.fit.elevated)) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth((sl.share / maxShare).coerceIn(0f, 1f))
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(c)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Haftalık ortalama RPE: 5–10 ölçeği, 7–8 hedef bandı. */
+@Composable
+private fun RpeCard(rpe: List<Pair<String, Float>>) {
+    val line = MaterialTheme.fit.accent
+    val band = MaterialTheme.fit.success
+    val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    val bg = MaterialTheme.colorScheme.surface
+    FitCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Zorlanma (RPE)", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            Text("haftalık ortalama", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+        }
+        if (rpe.isEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Setlere RPE girdikçe zorlanma eğilimin burada çizilecek. Seans sırasında RPE hücresine dokunman yeterli.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.fit.muted
+            )
+            return@FitCard
+        }
+        val last = rpe.last().second
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(last.trimNum().replace('.', ','), style = MaterialTheme.typography.headlineMedium.mono().copy(fontWeight = FontWeight.SemiBold))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                when {
+                    last < 7f -> "hedefin altında — biraz daha zorlanabilirsin"
+                    last <= 8.5f -> "hedef bandında"
+                    else -> "yüksek — toparlanmayı izle"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = when {
+                    last < 7f -> com.example.ui.components.MuscleColors.below
+                    last <= 8.5f -> MaterialTheme.fit.success
+                    else -> MaterialTheme.fit.warning
+                },
+                modifier = Modifier.padding(bottom = 5.dp)
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        val lo = 5f
+        val hi = 10f
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(130.dp)) {
+            fun y(v: Float) = size.height * (1f - ((v - lo) / (hi - lo)).coerceIn(0f, 1f))
+            // hedef bandı 7–8
+            drawRect(
+                band.copy(alpha = 0.12f),
+                topLeft = androidx.compose.ui.geometry.Offset(0f, y(8f)),
+                size = androidx.compose.ui.geometry.Size(size.width, y(7f) - y(8f))
+            )
+            listOf(6f, 7f, 8f, 9f).forEach { g ->
+                drawLine(grid, androidx.compose.ui.geometry.Offset(0f, y(g)), androidx.compose.ui.geometry.Offset(size.width, y(g)), strokeWidth = 1f)
+            }
+            val n = rpe.size
+            val step = if (n <= 1) 0f else size.width / (n - 1)
+            val pts = rpe.mapIndexed { i, (_, v) ->
+                androidx.compose.ui.geometry.Offset(if (n <= 1) size.width / 2f else step * i, y(v))
+            }
+            if (pts.size >= 2) {
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(pts[0].x, pts[0].y)
+                    for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+                }
+                drawPath(path, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+            pts.forEach { p ->
+                drawCircle(bg, radius = 4.5.dp.toPx(), center = p)
+                drawCircle(line, radius = 4.5.dp.toPx(), center = p, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(rpe.first().first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            Text("yeşil bant: hedef 7–8", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            Text(rpe.last().first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+        }
+    }
+}
+
 /* ================================ 2. KASLAR ================================ */
 
 @Composable
@@ -349,7 +693,6 @@ private fun MusclesTab(vm: AppViewModel) {
     var scope by rememberSaveable { mutableIntStateOf(0) }   // 0 = bu hafta, 1 = 4 hafta ortalaması
     var selected by remember { mutableStateOf<String?>(null) }
     var showWeakLinkAdvisor by remember { mutableStateOf(false) }
-    var side by rememberSaveable { mutableStateOf(com.example.ui.components.BodyView.FRONT) }
     val listState = rememberLazyListState()
     val scrollScope = rememberCoroutineScope()
 
@@ -447,7 +790,6 @@ private fun MusclesTab(vm: AppViewModel) {
     // Listeden bir kas seçilince haritaya ve detay kartına kaydır.
     fun selectFromList(key: String) {
         selected = key
-        side = com.example.ui.components.bodyViewOf(key)
         scrollScope.launch { listState.animateScrollToItem(if (underActivatedInfo.first) 2 else 1) }
     }
 
@@ -503,33 +845,11 @@ private fun MusclesTab(vm: AppViewModel) {
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         modifier = Modifier.weight(1f)
                     )
-                    // Ön / Arka anahtarı
-                    Row(
-                        Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.background)
-                            .padding(3.dp)
-                    ) {
-                        listOf(com.example.ui.components.BodyView.FRONT to "Ön", com.example.ui.components.BodyView.BACK to "Arka").forEach { (v, label) ->
-                            val on = side == v
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(if (on) MaterialTheme.fit.elevated else Color.Transparent)
-                                    .clickable { side = v }
-                                    .padding(horizontal = 12.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
                 }
-                Spacer(Modifier.height(16.dp))
-                com.example.ui.components.BodyMuscleMap(
-                    view = side,
+                Spacer(Modifier.height(14.dp))
+                BodyMuscleMapPair(
                     colors = colors,
-                    modifier = Modifier.fillMaxWidth().height(320.dp),
+                    height = 300.dp,
                     selected = selected,
                     onMuscleTap = { selected = if (selected == it) null else it }
                 )

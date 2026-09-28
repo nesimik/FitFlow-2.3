@@ -328,7 +328,7 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
 
         item {
             Text(
-                "Tüm veri cihazda · FitFlow 2.4",
+                "Tüm veri cihazda · FitFlow 2.5",
                 style = MaterialTheme.typography.labelMedium,
                 color = Color(0xFF4B5361),
                 textAlign = TextAlign.Center,

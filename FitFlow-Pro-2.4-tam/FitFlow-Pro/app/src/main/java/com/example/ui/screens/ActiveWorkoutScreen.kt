@@ -79,6 +79,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.example.core.Calc
@@ -537,10 +538,15 @@ private fun ExerciseLogCard(
     }
 
     val isCurrent = nextSetId != null && se.sets.any { it.id == nextSetId }
+    val success = MaterialTheme.fit.success
     FitCard(
         corner = 20.dp,
+        // Tamamlanan hareket: kartın tamamı hafif yeşil tonla dolar.
+        container = if (se.isDone) androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.surface, success, 0.11f)
+        else MaterialTheme.colorScheme.surface,
         border = when {
             isHighlighted -> MaterialTheme.fit.accent
+            se.isDone -> success.copy(alpha = 0.55f)
             isCurrent -> MaterialTheme.fit.accent.copy(alpha = 0.3f)
             isInSuperset -> Palette.warning.copy(alpha = 0.45f)
             else -> MaterialTheme.fit.cardBorder
@@ -549,28 +555,43 @@ private fun ExerciseLogCard(
     ) {
         /* Başlık: sıra numarası + isim + hedef. Diğer her şey ⋮ menüsünde. */
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        when {
-                            se.isDone -> MaterialTheme.fit.success
-                            isCurrent -> MaterialTheme.fit.accent.copy(alpha = 0.15f)
-                            else -> MaterialTheme.fit.elevated
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "$number",
-                    style = MaterialTheme.typography.labelLarge.mono().copy(fontWeight = FontWeight.SemiBold),
-                    color = when {
-                        se.isDone -> Color(0xFF062017)
-                        isCurrent -> MaterialTheme.fit.accent
-                        else -> MaterialTheme.fit.muted
+            // Kas grubu simgesi + köşede sıra numarası (bitince ✓)
+            val gc = Palette.muscle(se.muscleGroup)
+            Box(Modifier.size(42.dp)) {
+                Box(
+                    Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(gc.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(muscleGroupIcon(se.muscleGroup), null, tint = gc, modifier = Modifier.size(21.dp))
+                }
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(18.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(
+                            when {
+                                se.isDone -> success
+                                isCurrent -> MaterialTheme.fit.accent
+                                else -> MaterialTheme.fit.elevated
+                            }
+                        )
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(9.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (se.isDone) {
+                        Icon(Icons.Default.Check, null, tint = Color(0xFF062017), modifier = Modifier.size(12.dp))
+                    } else {
+                        Text(
+                            "$number",
+                            style = MaterialTheme.typography.labelSmall.mono().copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                            color = if (isCurrent) MaterialTheme.fit.onAccent else MaterialTheme.fit.muted
+                        )
                     }
-                )
+                }
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -746,12 +767,15 @@ private fun ExerciseLogCard(
 @Composable
 internal fun actionColor(action: ProgressAction): Color = when (action) {
     ProgressAction.INCREASE -> MaterialTheme.fit.success
-    ProgressAction.REPS -> MaterialTheme.fit.accent
+    ProgressAction.REPS -> REPS_BLUE
     ProgressAction.HOLD -> MaterialTheme.fit.muted
     ProgressAction.DECREASE -> Palette.warning
     ProgressAction.DELOAD -> Palette.violet
     ProgressAction.FIRST -> MaterialTheme.fit.muted
 }
+
+/** "Tekrar artır" rengi: vurgu renginden (buz mavisi) ayrışan net açık mavi. */
+internal val REPS_BLUE = Color(0xFF5AB2F5)
 
 internal fun actionIcon(action: ProgressAction): ImageVector = when (action) {
     ProgressAction.INCREASE, ProgressAction.REPS -> Icons.Default.TrendingUp
@@ -766,7 +790,8 @@ private fun PrescriptionPanel(rx: Prescription) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(color.copy(alpha = 0.10f))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

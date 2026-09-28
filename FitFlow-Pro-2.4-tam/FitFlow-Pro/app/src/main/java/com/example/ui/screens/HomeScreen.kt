@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
@@ -51,6 +54,7 @@ import androidx.navigation.NavHostController
 import com.example.core.Analytics
 import com.example.core.MuscleMap
 import com.example.core.MuscleRecovery
+import com.example.core.trimNum
 import com.example.core.Prescription
 import com.example.core.ProgressAction
 import com.example.core.RecoveryState
@@ -104,6 +108,8 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
     val exercises by vm.exercises.collectAsStateWithLifecycle()
     val allSets by vm.allSets.collectAsStateWithLifecycle()
     val prs by vm.prs.collectAsStateWithLifecycle()
+    val weekLoads by vm.weeklyMuscleLoads.collectAsStateWithLifecycle()
+    val weekDetail by vm.weeklyDetailLoads.collectAsStateWithLifecycle()
 
     var showDeloadDesignDialog by remember { mutableStateOf(false) }
     var showCancelActiveDialog by remember { mutableStateOf(false) }
@@ -232,6 +238,16 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
             }
         }
 
+        /* 1b) Hızlı erişim */
+        item {
+            QuickAccessRow(
+                onFree = { vm.startWorkout(null) { id -> nav.navigate("${Routes.WORKOUT}/$id") } },
+                onMeasure = { nav.navigate(Routes.BODY) },
+                onHistory = { nav.navigate(Routes.HISTORY) },
+                onTools = { nav.navigate(Routes.TOOLS) }
+            )
+        }
+
         /* 2) Bu hafta */
         item {
             Box(Modifier.padding(horizontal = 16.dp)) {
@@ -239,33 +255,32 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
             }
         }
 
-        /* 3) Toparlanma */
-        if (recovery.isNotEmpty()) {
+        /* 3) Toparlanma / Kas dengesi */
+        if (recovery.isNotEmpty() || weekLoads.isNotEmpty()) {
             item {
                 Box(Modifier.padding(horizontal = 16.dp)) {
-                    RecoveryCard(
+                    BodyStatusCard(
                         recovery = recovery,
+                        loads = weekLoads,
+                        detail = weekDetail,
                         todayConflicts = if (isTrainingDay) recoveryConflicts(plan, recovery, System.currentTimeMillis()) else null,
-                        onClick = { vm.setStatsTab(1); goTab(Routes.STATS) }
+                        onOpen = { vm.setStatsTab(1); goTab(Routes.STATS) }
                     )
                 }
             }
         }
 
-        /* 4) Son antrenman */
-        val last = workouts.filter { it.isFinished }.maxByOrNull { it.startedAt }
-        if (last != null) {
+        /* 4) Son antrenmanlar */
+        val recent = workouts.filter { it.isFinished }.sortedByDescending { it.startedAt }.take(3)
+        if (recent.isNotEmpty()) {
             item {
                 Box(Modifier.padding(horizontal = 16.dp)) {
-                    LastWorkoutCard(
-                        workout = last,
-                        previous = workouts.filter {
-                            it.isFinished && it.id != last.id && it.startedAt < last.startedAt &&
-                                last.routineDayId != null && it.routineDayId == last.routineDayId
-                        }.maxByOrNull { it.startedAt },
+                    RecentWorkoutsCard(
+                        recent = recent,
+                        all = workouts,
                         sets = allSets,
-                        prCount = prs.count { it.workoutId == last.id },
-                        onOpen = { nav.navigate("${Routes.WORKOUT_DETAIL}/${last.id}") },
+                        prCountOf = { id -> prs.count { it.workoutId == id } },
+                        onOpen = { id -> nav.navigate("${Routes.WORKOUT_DETAIL}/$id") },
                         onHistory = { nav.navigate(Routes.HISTORY) }
                     )
                 }
@@ -756,6 +771,265 @@ private fun RecoveryCard(recovery: Map<String, MuscleRecovery>, todayConflicts: 
                         "%${(r.readiness * 100).toInt()} · ${readyText(r.readyAt)}",
                         style = MaterialTheme.typography.labelMedium.mono(),
                         color = MaterialTheme.fit.muted
+                    )
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------- Hızlı erişim ------------------------------- */
+
+@Composable
+private fun QuickAccessRow(onFree: () -> Unit, onMeasure: () -> Unit, onHistory: () -> Unit, onTools: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        QuickTile(Icons.Default.Bolt, "Serbest", MaterialTheme.fit.accent, Modifier.weight(1f), onFree)
+        QuickTile(Icons.Default.MonitorWeight, "Ölçüm", MuscleColors.fresh, Modifier.weight(1f), onMeasure)
+        QuickTile(Icons.Default.History, "Geçmiş", Color(0xFFA5B4FC), Modifier.weight(1f), onHistory)
+        QuickTile(Icons.Default.Calculate, "Hesapla", Palette.gold, Modifier.weight(1f), onTools)
+    }
+}
+
+@Composable
+private fun QuickTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.fit.cardBorder, shape)
+            .clickable { onClick() }
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) { Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp)) }
+        Spacer(Modifier.height(6.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
+    }
+}
+
+/* ------------------------- Toparlanma / Kas dengesi ------------------------- */
+
+@Composable
+private fun BodyStatusCard(
+    recovery: Map<String, MuscleRecovery>,
+    loads: List<com.example.core.MuscleLoad>,
+    detail: List<com.example.core.MuscleLoad>,
+    todayConflicts: List<String>?,
+    onOpen: () -> Unit
+) {
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(if (recovery.isEmpty()) 1 else 0) }
+    val recColors = remember(recovery) { recovery.mapValues { (_, r) -> MuscleColors.forRecovery(r.state) } }
+    val loadColors = remember(loads, detail) {
+        (loads + detail).mapNotNull { l -> MuscleColors.forStatus(l.status)?.let { l.key to it } }.toMap()
+    }
+    FitCard(onClick = onOpen, contentPadding = PaddingValues(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(3.dp)
+            ) {
+                listOf("Toparlanma", "Kas dengesi").forEachIndexed { i, label ->
+                    val on = tab == i
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(if (on) MaterialTheme.fit.elevated else Color.Transparent)
+                            .clickable { tab = i }
+                            .padding(horizontal = 11.dp, vertical = 6.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (tab == 0) {
+                when {
+                    todayConflicts == null -> Unit
+                    todayConflicts.isEmpty() -> Text("Engel yok", style = MaterialTheme.typography.labelMedium, color = MuscleColors.fresh)
+                    else -> Text("⚠ ${todayConflicts.size} kas", style = MaterialTheme.typography.labelMedium, color = MuscleColors.recovering)
+                }
+            } else {
+                Text("bu hafta · etkin set", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        BodyMuscleMapPair(colors = if (tab == 0) recColors else loadColors, height = 220.dp, showLabels = false)
+        Spacer(Modifier.height(10.dp))
+        if (tab == 0) {
+            val notReady = recovery.values.filter { it.state != RecoveryState.FRESH }.sortedBy { it.readiness }
+            if (todayConflicts != null && todayConflicts.isNotEmpty()) {
+                Text(
+                    "Bugünkü programda: ${todayConflicts.joinToString(", ")} henüz tam toparlanmadı.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MuscleColors.recovering
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            if (notReady.isEmpty()) {
+                Text("Tüm kasların toparlanmış görünüyor.", style = MaterialTheme.typography.bodySmall, color = MuscleColors.fresh)
+            } else {
+                notReady.take(3).forEach { r ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(MuscleColors.forRecovery(r.state)))
+                        Spacer(Modifier.width(8.dp))
+                        Text(MuscleMap.label(r.key), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text(
+                            "%${(r.readiness * 100).toInt()} · ${readyText(r.readyAt)}",
+                            style = MaterialTheme.typography.labelMedium.mono(),
+                            color = MaterialTheme.fit.muted
+                        )
+                    }
+                }
+            }
+        } else {
+            // Kas dengesi: en eksik 3 kas + aşırı yüklenen varsa uyarı
+            val weakest = loads.filter { it.target.first > 0 && (it.status == com.example.core.LoadStatus.LOW || it.status == com.example.core.LoadStatus.BELOW || it.status == com.example.core.LoadStatus.NONE) }
+                .sortedBy { it.effectiveSets / it.target.first }
+                .take(3)
+            val over = loads.filter { it.status == com.example.core.LoadStatus.EXCESSIVE }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
+            ) {
+                MuscleColors.loadLegend.forEach { (c, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).clip(RoundedCornerShape(2.dp)).background(c))
+                        Spacer(Modifier.width(4.dp))
+                        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            if (weakest.isEmpty()) {
+                Text("Bu hafta tüm kaslar hedef aralığa yakın.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.success)
+            } else {
+                weakest.forEach { l ->
+                    val c = MuscleColors.forStatus(l.status) ?: MaterialTheme.fit.muted
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(MuscleMap.label(l.key), style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.width(84.dp))
+                        Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(MaterialTheme.fit.elevated)) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth((l.effectiveSets / l.target.first).coerceIn(0f, 1f))
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(c)
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "${l.effectiveSets.trimNum().replace('.', ',')} / ${l.target.first}",
+                            style = MaterialTheme.typography.labelMedium.mono(),
+                            color = MaterialTheme.fit.muted
+                        )
+                    }
+                }
+            }
+            if (over.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Fazla yüklenen: " + over.joinToString(", ") { MuscleMap.label(it.key) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MuscleColors.excessive
+                )
+            }
+        }
+    }
+}
+
+/* ------------------------------ Son antrenmanlar ----------------------------- */
+
+@Composable
+private fun RecentWorkoutsCard(
+    recent: List<WorkoutEntity>,
+    all: List<WorkoutEntity>,
+    sets: List<WorkoutSetEntity>,
+    prCountOf: (Long) -> Int,
+    onOpen: (Long) -> Unit,
+    onHistory: () -> Unit
+) {
+    FitCard(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Son antrenmanlar", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            Text(
+                "Tüm geçmiş →",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.fit.accent,
+                modifier = Modifier.clickable { onHistory() }
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        recent.forEachIndexed { i, w ->
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
+            val mine = sets.filter { it.workoutId == w.id && Analytics.isEffectiveSet(it) }
+            val vol = mine.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+            val prev = all.filter {
+                it.isFinished && it.id != w.id && it.startedAt < w.startedAt && w.routineDayId != null && it.routineDayId == w.routineDayId
+            }.maxByOrNull { it.startedAt }
+            val prevVol = prev?.let { p ->
+                sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+            } ?: 0f
+            val delta = if (prevVol > 0f) Math.round((vol - prevVol) / prevVol * 100f) else null
+            val minutes = (w.durationSeconds.takeIf { it > 0 }
+                ?: w.finishedAt?.let { ((it - w.startedAt) / 1000L).toInt() } ?: 0) / 60
+            val prCount = prCountOf(w.id)
+            Row(
+                Modifier.fillMaxWidth().clickable { onOpen(w.id) }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    Modifier.width(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.fit.elevated).padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        SHORT_DAYS[weekdayOf(w.startedAt) - 1].uppercase(java.util.Locale("tr")),
+                        style = MaterialTheme.typography.labelSmall.mono(),
+                        color = MaterialTheme.fit.muted
+                    )
+                    Text(
+                        Calendar.getInstance().apply { timeInMillis = w.startedAt }.get(Calendar.DAY_OF_MONTH).toString(),
+                        style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(w.title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row {
+                        Text(
+                            listOfNotNull(if (minutes > 0) "$minutes dk" else null, "${mine.size} set", formatTonnage(vol)).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.fit.muted,
+                            maxLines = 1
+                        )
+                        if (delta != null) {
+                            Text(
+                                " · ${if (delta >= 0) "+" else "−"}%${kotlin.math.abs(delta)}",
+                                style = MaterialTheme.typography.bodySmall.mono(),
+                                color = if (delta >= 0) MaterialTheme.fit.success else MaterialTheme.fit.warning,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+                if (prCount > 0) {
+                    Text(
+                        "$prCount PR",
+                        style = MaterialTheme.typography.labelMedium.mono().copy(fontWeight = FontWeight.Bold),
+                        color = Palette.gold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Palette.gold.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }

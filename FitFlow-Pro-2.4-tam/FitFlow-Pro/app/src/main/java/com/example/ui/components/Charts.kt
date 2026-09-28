@@ -198,9 +198,15 @@ fun BarChart(
     color: Color = MaterialTheme.fit.accent,
     suffix: String = "",
     height: Dp = 160.dp,
-    highlightLast: Boolean = true
+    highlightLast: Boolean = true,
+    /** Seçili sütunun üstte gösterilen değer biçimi (ör. ton). Verilmezse sayı + [suffix]. */
+    format: ((Float) -> String)? = null,
+    /** Ortalama çizgisi (kesikli) çizilsin mi. */
+    showAverage: Boolean = false
 ) {
     if (values.isEmpty()) { ChartPlaceholder(height); return }
+    val avg = values.average().toFloat()
+    val avgColor = MaterialTheme.fit.muted
     var selected by remember(values) { mutableIntStateOf(if (highlightLast) values.lastIndex else -1) }
     val maxV = (values.maxOrNull() ?: 0f).coerceAtLeast(0.0001f)
     val anim by animateFloatAsState(1f, tween(600), label = "bar")
@@ -209,8 +215,8 @@ fun BarChart(
     Column(modifier.fillMaxWidth()) {
         if (selected in values.indices) {
             Text(
-                "${values[selected].trimNum()}$suffix · ${labels.getOrElse(selected) { "" }}",
-                style = MaterialTheme.typography.titleMedium,
+                (format?.invoke(values[selected]) ?: "${values[selected].trimNum()}$suffix") + " · ${labels.getOrElse(selected) { "" }}",
+                style = MaterialTheme.typography.titleMedium.copy(fontFamily = com.example.ui.theme.MonoFamily),
                 color = color,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
@@ -247,6 +253,16 @@ fun BarChart(
                     topLeft = Offset(x, size.height - barH),
                     size = Size(barW, barH),
                     cornerRadius = CornerRadius(barW / 3f, barW / 3f)
+                )
+            }
+            if (showAverage && avg > 0f) {
+                val y = size.height - (avg / maxV) * size.height * anim
+                drawLine(
+                    avgColor.copy(alpha = 0.7f),
+                    Offset(0f, y),
+                    Offset(size.width, y),
+                    strokeWidth = 1.5f,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
                 )
             }
         }

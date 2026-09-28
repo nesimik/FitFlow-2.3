@@ -25,6 +25,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DirectionsBike
+import androidx.compose.material.icons.filled.DirectionsRun
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Rowing
+import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.SportsGymnastics
+import androidx.compose.material.icons.filled.SportsHandball
+import androidx.compose.material.icons.filled.SportsMma
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -110,6 +118,18 @@ fun ScreenHeader(
         }
         actions()
     }
+}
+
+/** Kas grubuna göre spor simgesi (emoji yerine çizim ikon). */
+fun muscleGroupIcon(group: String): androidx.compose.ui.graphics.vector.ImageVector = when (group) {
+    Muscles.CHEST -> Icons.Default.FitnessCenter
+    Muscles.BACK -> Icons.Default.Rowing
+    Muscles.LEGS -> Icons.Default.DirectionsRun
+    Muscles.SHOULDERS -> Icons.Default.SportsGymnastics
+    Muscles.ARMS -> Icons.Default.SportsMma
+    Muscles.CORE -> Icons.Default.SelfImprovement
+    Muscles.CARDIO -> Icons.Default.DirectionsBike
+    else -> Icons.Default.SportsHandball
 }
 
 /** Kas grubu rengiyle küçük yuvarlak simge. */
