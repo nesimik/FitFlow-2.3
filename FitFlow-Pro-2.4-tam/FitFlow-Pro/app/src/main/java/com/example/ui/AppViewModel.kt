@@ -285,8 +285,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val sessionExercises: StateFlow<List<SessionExercise>> =
         combine(
             combine(activeSets, exercises, allSets) { current, lib, history -> Triple(current, lib, history) },
-            combine(activeWorkout, allItems, workouts) { workout, items, wList -> Triple(workout, items, wList) }
-        ) { (current, lib, history), (workout, items, wList) ->
+            combine(activeWorkout, allItems, workouts) { workout, items, wList -> Triple(workout, items, wList) },
+            settings.ladderConfigs
+        ) { (current, lib, history), (workout, items, wList), ladderCfgs ->
             if (workout == null) emptyList() else {
                 val libMap = lib.associateBy { it.id }
                 val dayItems = items.filter { it.dayId == workout.routineDayId }.sortedBy { it.orderIndex }
@@ -335,6 +336,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             }
                             .sortedByDescending { it.dateMillis }
                             .take(8)
+                        val ladder = com.example.core.Ladders.resolve(
+                            item?.let { ladderCfgs[it.id] },
+                            ex?.name ?: sets.first().exerciseName, ex?.muscleGroup ?: "", ex?.equipment ?: "", tracking
+                        )
                         val prescription = if (tracking == ExerciseEntity.TRACK_DURATION || exIsWarmup) null
                         else ProgressionEngine.prescribe(
                             history = rxHistory,
@@ -349,9 +354,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                    else loadKindOf(ex?.equipment ?: ""),
                             profile = settings.loadingProfile(),
                             deload = workout.isDeload,
-                            scheme = com.example.core.RepScheme.classify(
-                                ex?.name ?: sets.first().exerciseName, ex?.muscleGroup ?: "", ex?.equipment ?: "", tracking
-                            ),
+                            scheme = null,
+                            ladder = ladder,
                             exerciseName = ex?.name ?: sets.first().exerciseName
                         )
                         SessionExercise(
@@ -371,7 +375,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             isWarmup = exIsWarmup,
                             equipment = ex?.equipment ?: "",
                             prescription = prescription,
-                            history = rxHistory
+                            history = rxHistory,
+                            routineItemId = item?.id,
+                            ladder = ladder
                         )
                     }
                     .sortedBy { it.order }
@@ -458,7 +464,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 title = workoutTitle,
                 routineName = routine?.name ?: "",
                 isDeload = shouldDeload,
-                profile = settings.loadingProfile()
+                profile = settings.loadingProfile(),
+                ladders = settings.ladderConfigs.value
             )
             _elapsed.value = 0
             onStarted(id)
@@ -946,6 +953,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addItem(dayId: Long, exerciseId: Long) = viewModelScope.launch { repo.addItem(dayId, exerciseId) }
     fun updateItem(i: RoutineItemEntity) = viewModelScope.launch { repo.updateItem(i) }
+
+    /* ---------------------- Program hareketi paneli yardımcıları ---------------------- */
+
+    /** Seans ekranı açılınca bitiş penceresini hemen göster (program / ana ekrandan "Kaydet ve bitir"). */
+    private val _finishOnEnter = MutableStateFlow(false)
+    fun requestFinishOnEnter() { _finishOnEnter.value = true }
+    fun consumeFinishOnEnter(): Boolean = _finishOnEnter.value.also { _finishOnEnter.value = false }
+
+    fun setLadderConfig(itemId: Long, cfg: com.example.core.LadderConfig?) = settings.setLadderConfig(itemId, cfg)
+
+    /** "80 kg × 8/8/7 · 3 gün önce" ve en iyi tahmini 1RM. */
+    fun itemHistory(exerciseId: Long): Pair<String?, Float> {
+        val done = allSets.value.filter { it.exerciseId == exerciseId && it.isCompleted && !it.isWarmup && it.reps > 0 }
+        if (done.isEmpty()) return null to 0f
+        val finished = workouts.value.filter { it.isFinished }.associateBy { it.id }
+        val lastWid = done.filter { it.workoutId in finished }.maxByOrNull { it.performedAt }?.workoutId
+        val best = done.maxOf { com.example.core.Calc.e1rm(it.weightKg, it.reps) }
+        val line = lastWid?.let { wid ->
+            val ws = done.filter { it.workoutId == wid }.sortedBy { it.setNumber }
+            val w = ws.maxOf { it.weightKg }
+            val when_ = finished[wid]?.startedAt ?: ws.first().performedAt
+            val days = ((com.example.core.startOfDay(System.currentTimeMillis()) - com.example.core.startOfDay(when_)) / 86_400_000L).toInt()
+            val ago = when { days <= 0 -> "bugün"; days == 1 -> "dün"; else -> "$days gün önce" }
+            (if (w > 0f) "${w.trimNum()} kg × " else "") + ws.joinToString("/") { it.reps.toString() } + " · $ago"
+        }
+        return line to best
+    }
+
+    /** Program hareketi için alternatifler (kalıcı değiştirme). */
+    fun alternativesForItem(item: RoutineItemEntity): List<com.example.core.Alternatives.Suggestion> {
+        val lib = exercises.value
+        val target = lib.firstOrNull { it.id == item.exerciseId } ?: return emptyList()
+        val last = HashMap<Long, Float>()
+        allSets.value.asSequence().filter { it.isCompleted && !it.isWarmup }.sortedBy { it.performedAt }
+            .forEach { last[it.exerciseId] = it.weightKg }
+        return com.example.core.Alternatives.find(target, lib, last, last[item.exerciseId] ?: item.targetWeight, settings.loadingProfile())
+    }
+
+    /** Programdaki hareketi kalıcı olarak başka bir hareketle değiştirir; merdiven ayarı sıfırlanır. */
+    fun swapItemExercise(item: RoutineItemEntity, newExerciseId: Long, weightHint: Float) {
+        settings.setLadderConfig(item.id, null)
+        updateItem(item.copy(exerciseId = newExerciseId, customName = "", targetWeight = if (weightHint > 0f) weightHint else 0f))
+    }
     fun deleteItem(i: RoutineItemEntity) = viewModelScope.launch { repo.deleteItem(i) }
     fun moveItem(dayId: Long, itemId: Long, up: Boolean) = viewModelScope.launch { repo.moveItem(dayId, itemId, up) }
 
@@ -1100,7 +1150,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 kind = if (ex.trackingType == ExerciseEntity.TRACK_REPS) LoadKind.BODYWEIGHT else loadKindOf(ex.equipment),
                 profile = profile,
                 deload = deload,
-                scheme = com.example.core.RepScheme.classify(ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
+                ladder = com.example.core.Ladders.resolve(settings.ladderFor(item.id), ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
                 exerciseName = ex.name
             )
         }
@@ -1129,7 +1179,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 repMax = se.targetRepMax,
                 kind = if (se.trackingType == ExerciseEntity.TRACK_REPS) LoadKind.BODYWEIGHT else loadKindOf(se.equipment),
                 profile = profile,
-                scheme = com.example.core.RepScheme.classify(se.name, se.muscleGroup, se.equipment, se.trackingType),
+                ladder = se.ladder,
                 exerciseName = se.name
             )
             next += se.name to rx

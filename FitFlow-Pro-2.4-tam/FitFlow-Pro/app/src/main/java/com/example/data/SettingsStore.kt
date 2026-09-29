@@ -207,6 +207,20 @@ class SettingsStore(context: Context) {
     }
     init { prefs.registerOnSharedPreferenceChangeListener(prefListener) }
 
+    /* ------------------------ Hareket başına merdiven ------------------------ */
+    private val _ladders = flow(parseLadders(prefs.getString(K_LADDERS, "") ?: ""))
+    /** Program hareketi (RoutineItem id) → merdiven ayarı. Varsayılan ayarlar saklanmaz. */
+    val ladderConfigs: StateFlow<Map<Long, com.example.core.LadderConfig>> = _ladders.asStateFlow()
+
+    fun setLadderConfig(itemId: Long, cfg: com.example.core.LadderConfig?) {
+        val m = _ladders.value.toMutableMap()
+        if (cfg == null || cfg.isDefault) m.remove(itemId) else m[itemId] = cfg
+        _ladders.value = m
+        prefs.edit().putString(K_LADDERS, ladderJson(m)).apply()
+    }
+
+    fun ladderFor(itemId: Long?): com.example.core.LadderConfig? = itemId?.let { _ladders.value[it] }
+
     /** Health Connect eşitlemesi açık mı. */
     private val _healthConnectOn = flow(prefs.getBoolean(K_HEALTH, false))
     val healthConnectOn: StateFlow<Boolean> = _healthConnectOn.asStateFlow()
@@ -273,6 +287,32 @@ class SettingsStore(context: Context) {
         const val K_REMINDER_ON = "reminder_on"; const val K_REMINDER_MIN = "reminder_minute"; const val K_WEEKLY_REPORT = "weekly_report"
         const val K_LAST_REPORT_WEEK = "last_report_week"; const val K_LAST_REMINDER_DAY = "last_reminder_day"
         const val K_HEALTH = "health_connect_on"
+        const val K_LADDERS = "ladder_configs"
+
+        fun parseLadders(json: String): Map<Long, com.example.core.LadderConfig> = runCatching {
+            if (json.isBlank()) return emptyMap()
+            val o = org.json.JSONObject(json)
+            o.keys().asSequence().associate { k ->
+                val c = o.getJSONObject(k)
+                k.toLong() to com.example.core.LadderConfig(
+                    mode = runCatching { com.example.core.LadderMode.valueOf(c.optString("mode", "AUTO")) }.getOrDefault(com.example.core.LadderMode.AUTO),
+                    type = c.optString("type", "").takeIf { it.isNotBlank() }?.let { t -> runCatching { com.example.core.RepScheme.valueOf(t) }.getOrNull() },
+                    base = c.optInt("base", 8), steps = c.optInt("steps", 4),
+                    spread = c.optInt("spread", 2), reverse = c.optBoolean("reverse", false)
+                )
+            }
+        }.getOrDefault(emptyMap())
+
+        fun ladderJson(m: Map<Long, com.example.core.LadderConfig>): String {
+            val o = org.json.JSONObject()
+            m.forEach { (id, c) ->
+                o.put(id.toString(), org.json.JSONObject().apply {
+                    put("mode", c.mode.name); put("type", c.type?.name ?: "")
+                    put("base", c.base); put("steps", c.steps); put("spread", c.spread); put("reverse", c.reverse)
+                })
+            }
+            return o.toString()
+        }
         const val K_TARGET_WEIGHT = "target_weight"; const val K_GOAL_LIFT = "goal_lift"; const val K_GOAL_LIFT_KG = "goal_lift_kg"
     }
 }

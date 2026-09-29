@@ -107,6 +107,67 @@ enum class RepScheme(val label: String, val base: Int, val steps: Int, val range
     }
 }
 
+/**
+ * Uygulanan tekrar merdiveni. [RepScheme] türlerinden türetilir ya da kullanıcı kendisi tanımlar.
+ * @param spread ilk ve son set arasındaki tekrar farkı (6-7-8 için 2)
+ * @param reverse setler azalan sırada (8-7-6): aynı ağırlıkta yorgunluk birikimine uygun
+ */
+data class LadderSpec(
+    val label: String,
+    val base: Int,
+    val steps: Int,
+    val spread: Int = 2,
+    val reverse: Boolean = false
+) {
+    val lastStep: Int get() = (steps - 1).coerceAtLeast(0)
+    val rangeLo: Int get() = base
+    val rangeHi: Int get() = base + lastStep + spread
+
+    fun targets(step: Int, sets: Int): List<Int> {
+        val n = sets.coerceAtLeast(1)
+        val asc = List(n) { i -> base + step + if (n <= 1) 0 else Math.round(i * spread.toFloat() / (n - 1)) }
+        return if (reverse) asc.reversed() else asc
+    }
+
+    /** "6-7-8 → 9-10-11" (set sayısına göre). */
+    fun describe(sets: Int): String {
+        val a = targets(0, sets).joinToString("-")
+        return if (lastStep == 0) a else "$a → ${targets(lastStep, sets).joinToString("-")}"
+    }
+}
+
+fun RepScheme.spec(reverse: Boolean = false): LadderSpec = LadderSpec(label, base, steps, 2, reverse)
+
+enum class LadderMode(val label: String) { AUTO("Otomatik"), TYPE("Tür seç"), CUSTOM("Özel"), OFF("Kapalı") }
+
+/** Program hareketi başına merdiven ayarı. */
+data class LadderConfig(
+    val mode: LadderMode = LadderMode.AUTO,
+    val type: RepScheme? = null,
+    val base: Int = 8,
+    val steps: Int = 4,
+    val spread: Int = 2,
+    val reverse: Boolean = false
+) {
+    /** @param auto hareket için otomatik sınıflandırma (null = merdivene uygun değil) */
+    fun resolve(auto: RepScheme?): LadderSpec? = when (mode) {
+        LadderMode.AUTO -> auto?.spec(reverse)
+        LadderMode.TYPE -> (type ?: auto ?: RepScheme.SEMI).spec(reverse)
+        LadderMode.CUSTOM -> LadderSpec("Özel merdiven", base.coerceIn(1, 50), steps.coerceIn(1, 12), spread.coerceIn(0, 10), reverse)
+        LadderMode.OFF -> null
+    }
+
+    val isDefault: Boolean get() = mode == LadderMode.AUTO && !reverse
+}
+
+object Ladders {
+    /** Hareketin geçerli merdiveni; süreli hareketlerde her zaman null. */
+    fun resolve(cfg: LadderConfig?, name: String, group: String, equipment: String, tracking: String): LadderSpec? {
+        if (tracking == "duration" || tracking == "distance") return null
+        return (cfg ?: LadderConfig()).resolve(RepScheme.classify(name, group, equipment, tracking))
+    }
+}
+
 /** Geçmiş bir seansta bu hareketin tek bir çalışma seti. */
 data class LoggedSet(val weight: Float, val reps: Int, val rpe: Float = 0f)
 
@@ -173,9 +234,12 @@ object ProgressionEngine {
         /** Verilirse tekrar merdiveni kullanılır; program aralığı yerine türün aralığı geçerlidir. */
         scheme: RepScheme? = null,
         /** Hareket adı (ağırlıklı versiyon önerisinde kullanılır). */
-        exerciseName: String = ""
+        exerciseName: String = "",
+        /** Kullanıcının hareket ayarından gelen merdiven; verilirse [scheme] yerine kullanılır. */
+        ladder: LadderSpec? = null
     ): Prescription {
-        if (scheme != null) return prescribeLadder(history, targetSets, scheme, kind, profile, deload, exerciseName)
+        val spec = ladder ?: scheme?.spec()
+        if (spec != null) return prescribeLadder(history, targetSets, spec, kind, profile, deload, exerciseName)
         val lo = repMin.coerceAtLeast(1)
         val hi = repMax.coerceAtLeast(lo)
         val setCount = targetSets.coerceAtLeast(1)
@@ -285,7 +349,7 @@ object ProgressionEngine {
     private fun prescribeLadder(
         history: List<SessionLog>,
         targetSets: Int,
-        scheme: RepScheme,
+        scheme: LadderSpec,
         kind: LoadKind,
         profile: LoadingProfile,
         deload: Boolean,
@@ -412,8 +476,14 @@ object ProgressionEngine {
     }
 
     /** Ağırlıklı versiyon önerisi: dips → "Ağırlıklı Dips", diğerleri → "Ağırlıklı Barfiks". */
-    private fun weightedVariant(name: String): String =
-        if (name.lowercase(java.util.Locale("tr")).contains("dip")) "Ağırlıklı Dips" else "Ağırlıklı Barfiks"
+    private fun weightedVariant(name: String): String {
+        val n = name.lowercase(java.util.Locale("tr"))
+        return when {
+            n.contains("dip") -> "Ağırlıklı Dips"
+            n.contains("barfiks") || n.contains("pull") || n.contains("chin") -> "Ağırlıklı Barfiks"
+            else -> "daha zor / ağırlıklı bir varyasyon"
+        }
+    }
 
     /** Seansın çalışma ağırlığı: en çok set yapılan ağırlık (eşitlikte ağır olan). */
     fun workingWeight(sets: List<LoggedSet>): Float {

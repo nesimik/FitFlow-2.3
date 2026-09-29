@@ -136,6 +136,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     var showSupersetPicker by remember { mutableStateOf(false) }
     var exerciseToCombine by remember { mutableStateOf<SessionExercise?>(null) }
     var showFinish by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (vm.consumeFinishOnEnter()) showFinish = true }
     var showDiscard by remember { mutableStateOf(false) }
     var showTips by remember { mutableStateOf<SessionExercise?>(null) }
     var altFor by remember { mutableStateOf<SessionExercise?>(null) }
@@ -634,8 +635,7 @@ private fun ExerciseLogCard(
                     Text(
                         if (isDuration) "Dinlenme ${se.restSeconds} sn"
                         else se.prescription?.let { rx ->
-                            val sch = com.example.core.RepScheme.classify(se.name, se.muscleGroup, se.equipment, se.trackingType)
-                            (sch?.let { "${it.label} · " } ?: "") + "${rx.repMin}-${rx.repMax} tekrar · ${se.restSeconds} sn"
+                            (se.ladder?.let { "${it.label}${if (it.reverse) " ↓" else ""} · " } ?: "") + "${rx.repMin}-${rx.repMax} tekrar · ${se.restSeconds} sn"
                         } ?: "${se.targetRepMin}-${se.targetRepMax} tekrar · ${se.restSeconds} sn",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.fit.muted,

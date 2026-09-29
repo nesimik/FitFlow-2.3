@@ -137,16 +137,18 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
 
     /* ------------------------------- Diyaloglar ------------------------------ */
     if (showCancelActiveDialog) {
-        AlertDialog(
-            onDismissRequest = { showCancelActiveDialog = false },
-            title = { Text("Devam eden seansı sonlandır") },
-            text = { Text("Aktif antrenman seansını kapatmak istediğine emin misin?") },
-            confirmButton = {
-                TextButton(onClick = { showCancelActiveDialog = false; vm.cancelActiveWorkout() }) {
-                    Text("Evet, sonlandır", color = MaterialTheme.fit.danger)
-                }
+        val act = active
+        if (act == null) showCancelActiveDialog = false
+        else com.example.ui.components.FinishSessionDialog(
+            title = act.title,
+            summary = null,
+            onSave = {
+                showCancelActiveDialog = false
+                vm.requestFinishOnEnter()
+                nav.navigate("${Routes.WORKOUT}/${act.id}")
             },
-            dismissButton = { TextButton(onClick = { showCancelActiveDialog = false }) { Text("Vazgeç") } }
+            onDiscard = { showCancelActiveDialog = false; vm.discardWorkout {} },
+            onDismiss = { showCancelActiveDialog = false }
         )
     }
     fun goTab(route: String) = nav.navigate(route) {

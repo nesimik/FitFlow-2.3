@@ -202,7 +202,11 @@ data class SessionExercise(
     /** Progresyon motorunun bugün için önerisi (süreli / ısınma hareketlerinde null). */
     val prescription: com.example.core.Prescription? = null,
     /** Bu günün geçmiş seansları (yeni → eski), yalnızca çalışma setleri. */
-    val history: List<com.example.core.SessionLog> = emptyList()
+    val history: List<com.example.core.SessionLog> = emptyList(),
+    /** Programdaki karşılığı (serbest seansta null). */
+    val routineItemId: Long? = null,
+    /** Geçerli tekrar merdiveni (kapalıysa / uygun değilse null). */
+    val ladder: com.example.core.LadderSpec? = null
 ) {
     val completedSets: Int get() = sets.count { it.isCompleted }
     val totalSets: Int get() = sets.size

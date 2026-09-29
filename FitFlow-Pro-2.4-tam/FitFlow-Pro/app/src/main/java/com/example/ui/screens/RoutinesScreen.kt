@@ -138,6 +138,20 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
     val workouts by vm.workouts.collectAsStateWithLifecycle()
     var showBlockDialog by remember { mutableStateOf(false) }
     val blockLoadWeeks by vm.settings.blockLoadWeeks.collectAsStateWithLifecycle()
+    val ladderCfgs by vm.settings.ladderConfigs.collectAsStateWithLifecycle()
+    val sessionEx by vm.sessionExercises.collectAsStateWithLifecycle()
+    val elapsed by vm.elapsedSeconds.collectAsStateWithLifecycle()
+    var dayToEdit by remember { mutableStateOf<RoutineDayEntity?>(null) }
+    // Açık kart: varsayılan olarak devam eden seansın günü, yoksa bugünün günü.
+    var expandedDay by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(null) }
+    var expandInit by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(days, activeWorkout) {
+        if (!expandInit && days.isNotEmpty()) {
+            expandedDay = activeWorkout?.takeIf { !it.isFinished }?.routineDayId?.takeIf { id -> days.any { it.id == id } }
+                ?: days.firstOrNull { it.weekday == todayWeekday() }?.id
+            expandInit = true
+        }
+    }
 
     var showAddRoutine by remember { mutableStateOf(false) }
     var showAddDay by remember { mutableStateOf(false) }
@@ -290,23 +304,22 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
             } else {
                 itemsIndexed(days, key = { _, d -> d.id }) { index, day ->
                     val items = remember(allItems, day.id) { dayItemsOf(day.id) }
-                    DayCard(
+                    ProgramDayCard(
+                        vm = vm,
+                        nav = nav,
                         day = day,
                         color = dayColor(index),
                         isToday = day.weekday == todayWeekday(),
                         items = items,
+                        exerciseMap = exerciseMap,
+                        ladderCfgs = ladderCfgs,
                         activeWorkout = activeWorkout,
-                        nameOf = { id -> exerciseMap[id]?.name ?: "?" },
-                        groupOf = { id -> exerciseMap[id]?.muscleGroup ?: "Diğer" },
-                        // Gün devam ediyorsa doğrudan seansa dön; düzenleme ⋮ menüsünde.
-                        onOpen = {
-                            val act = activeWorkout
-                            if (act != null && !act.isFinished && act.routineDayId == day.id) nav.navigate("${Routes.WORKOUT}/${act.id}")
-                            else nav.navigate("${Routes.DAY}/${day.id}")
-                        },
-                        onEdit = { nav.navigate("${Routes.DAY}/${day.id}") },
-                        onStart = { vm.startWorkout(day) { id -> nav.navigate("${Routes.WORKOUT}/$id") } },
-                        onContinue = { workoutId -> nav.navigate("${Routes.WORKOUT}/$workoutId") },
+                        sessionDone = sessionEx.sumOf { it.completedSets },
+                        sessionTotal = sessionEx.sumOf { it.totalSets },
+                        sessionElapsed = elapsed,
+                        expanded = expandedDay == day.id,
+                        onToggle = { expandedDay = if (expandedDay == day.id) null else day.id },
+                        onEditDay = { dayToEdit = day },
                         onDuplicate = { vm.duplicateDay(day) },
                         onReplaceFromHistory = { dayToReplaceFromHistory = day },
                         onDelete = { dayToDelete = day }
@@ -338,6 +351,17 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                 showAddDay = false
             },
             onDismiss = { showAddDay = false }
+        )
+    }
+
+    dayToEdit?.let { d ->
+        DayDialog(
+            initial = d,
+            onSave = { name, focus, weekday ->
+                vm.updateDay(d.copy(name = name, focus = focus, weekday = weekday))
+                dayToEdit = null
+            },
+            onDismiss = { dayToEdit = null }
         )
     }
 
