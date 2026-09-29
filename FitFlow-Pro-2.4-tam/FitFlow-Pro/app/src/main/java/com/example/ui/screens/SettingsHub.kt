@@ -654,6 +654,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.25" to "Yeni Akıllı öneriler: program puanı, kas dengesi, tek dokunuşla uygulanan öncelikli öneriler. Tam ekran kas haritasında detay kaydırılabilir.",
     "2.17" to "Yeni ayarlar: kategoriler, tema önizleme, salon plakaları ve dambılları, antrenman tercihleri, CSV dışa aktarma, parmak izi kilidi.",
     "2.16" to "Açılır gün kartları, hareket paneli, hareket başına tekrar merdiveni (ters / özel), seans devam et / bitir.",
     "2.15" to "Ana ekran widget'ı, Health Connect eşitlemesi.",

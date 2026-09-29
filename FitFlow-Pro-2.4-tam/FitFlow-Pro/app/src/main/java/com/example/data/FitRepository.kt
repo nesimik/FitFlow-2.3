@@ -182,6 +182,13 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         return id
     }
 
+    /** Hareketi belirli set sayısıyla ekler (Akıllı öneriler). */
+    suspend fun addItemWithSets(dayId: Long, exerciseId: Long, sets: Int): Long {
+        val id = addItem(dayId, exerciseId)
+        dao.itemsForDay(dayId).firstOrNull { it.id == id }?.let { dao.updateItem(it.copy(targetSets = sets.coerceIn(1, 10))) }
+        return id
+    }
+
     suspend fun updateItem(i: RoutineItemEntity) {
         dao.updateItem(i)
         normalizeItemOrders(i.dayId)

@@ -953,6 +953,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addItem(dayId: Long, exerciseId: Long) = viewModelScope.launch { repo.addItem(dayId, exerciseId) }
     fun updateItem(i: RoutineItemEntity) = viewModelScope.launch { repo.updateItem(i) }
+    fun addItemWithSets(dayId: Long, exerciseId: Long, sets: Int) = viewModelScope.launch { repo.addItemWithSets(dayId, exerciseId, sets) }
 
     /* ---------------------- Program hareketi paneli yardımcıları ---------------------- */
 

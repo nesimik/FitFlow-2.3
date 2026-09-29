@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
@@ -165,52 +168,70 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(10.dp))
 
             if (big) {
-                /* Büyük tek görünüm: ekranın tamamı, vektörel ve keskin */
-                Box(
-                    Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Brush.radialGradient(listOf(accent.copy(alpha = 0.10f), Color.Transparent)))
+                /* Büyük tek görünüm (2.25): kaydırılabilir liste. Harita sabit yükseklikte, detay altında;
+                 * kasa dokununca liste detaya kayar. Dialog'da gezinme çubuğu boşluğu bildirilmediği için
+                 * altta geniş boşluk bırakılır. */
+                val bigState = rememberLazyListState()
+                val mapH = (LocalConfiguration.current.screenHeightDp * 0.66f).dp
+                LaunchedEffect(selected) {
+                    if (selected != null) bigState.animateScrollToItem(1)
+                }
+                LazyColumn(
+                    state = bigState,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 140.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    BodyMuscleMap(
-                        view = bigView,
-                        colors = colors,
-                        modifier = Modifier.fillMaxSize().padding(12.dp),
-                        selected = selected,
-                        onMuscleTap = { selected = if (selected == it) null else it }
-                    )
-                    selected?.let { k ->
-                        SelectedPill(k, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { selected = null }
+                    item(key = "bigmap") {
+                        Box(
+                            Modifier.fillMaxWidth().height(mapH)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Brush.radialGradient(listOf(accent.copy(alpha = 0.10f), Color.Transparent)))
+                        ) {
+                            BodyMuscleMap(
+                                view = bigView,
+                                colors = colors,
+                                modifier = Modifier.fillMaxSize().padding(12.dp),
+                                selected = selected,
+                                onMuscleTap = { selected = if (selected == it) null else it }
+                            )
+                            selected?.let { k ->
+                                SelectedPill(k, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { selected = null }
+                            }
+                            Row(
+                                Modifier.align(Alignment.TopCenter).padding(top = 10.dp).clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surface).padding(3.dp)
+                            ) {
+                                listOf(BodyView.FRONT to "Ön", BodyView.BACK to "Arka").forEach { (v, l) ->
+                                    Text(
+                                        l, style = MaterialTheme.typography.labelLarge,
+                                        color = if (bigView == v) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted,
+                                        modifier = Modifier.clip(RoundedCornerShape(9.dp))
+                                            .background(if (bigView == v) MaterialTheme.fit.elevated else Color.Transparent)
+                                            .clickable { bigView = v }.padding(horizontal = 16.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
-                    Row(
-                        Modifier.align(Alignment.TopCenter).padding(top = 10.dp).clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surface).padding(3.dp)
-                    ) {
-                        listOf(BodyView.FRONT to "Ön", BodyView.BACK to "Arka").forEach { (v, l) ->
+                    item(key = "bigdetail") {
+                        val k = selected
+                        if (k != null) {
+                            MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(),
+                                compact = false, onClose = { selected = null })
+                        } else {
                             Text(
-                                l, style = MaterialTheme.typography.labelLarge,
-                                color = if (bigView == v) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted,
-                                modifier = Modifier.clip(RoundedCornerShape(9.dp))
-                                    .background(if (bigView == v) MaterialTheme.fit.elevated else Color.Transparent)
-                                    .clickable { bigView = v }.padding(horizontal = 16.dp, vertical = 6.dp)
+                                "Ayrıntı için bir kasa dokun",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }
                 }
-                selected?.let { k ->
-                    // Detay kaydırılabilir; harita üstte küçülür, kart hiçbir zaman ekrandan taşmaz.
-                    Box(
-                        Modifier.fillMaxWidth().heightIn(max = 300.dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-                        MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(),
-                            compact = false, onClose = { selected = null })
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 140.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     /* Özet */
