@@ -175,7 +175,7 @@ fun FitFlowTheme(
     accentHex: String = "#3CD3EB",
     amoled: Boolean = false,
     fontScale: Float = 1f,
-    cardGradient: Boolean = true,
+    cardGlowLevel: Float = 0.35f,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -238,7 +238,7 @@ fun FitFlowTheme(
         cardBorder = if (dark) (if (amoled) Palette.cardLineAmoled else Palette.cardLineDark) else Palette.outlineLight,
         elevated = if (dark) (if (amoled) Palette.surfaceAmoled2 else Palette.surfaceDark2) else Palette.surfaceLight2,
         isDark = dark,
-        cardGlow = if (!cardGradient) 0f else if (dark) 0.085f else 0.06f
+        cardGlow = cardGlowLevel.coerceIn(0f, 1f) * (if (dark) 0.24f else 0.16f)
     )
 
     val view = LocalView.current

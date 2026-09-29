@@ -86,10 +86,10 @@ class SettingsStore(context: Context) {
     val amoled: StateFlow<Boolean> = _amoled.asStateFlow()
     fun setAmoled(v: Boolean) { _amoled.value = v; prefs.edit().putBoolean(K_AMOLED, v).apply() }
 
-    private val _cardGradient = flow(prefs.getBoolean("card_gradient", true))
-    /** Kartlarda vurgu renginden hafif renk geçişi. */
-    val cardGradient: StateFlow<Boolean> = _cardGradient.asStateFlow()
-    fun setCardGradient(v: Boolean) { _cardGradient.value = v; prefs.edit().putBoolean("card_gradient", v).apply() }
+    /** Kartlardaki vurgu rengi geçişinin yoğunluğu: 0 = kapalı, 1 = en belirgin. */
+    private val _cardGlow = flow(prefs.getFloat("card_glow", if (prefs.getBoolean("card_gradient", true)) 0.35f else 0f))
+    val cardGlow: StateFlow<Float> = _cardGlow.asStateFlow()
+    fun setCardGlow(v: Float) { val c = v.coerceIn(0f, 1f); _cardGlow.value = c; prefs.edit().putFloat("card_glow", c).apply() }
 
     private val _fontScale = flow(prefs.getFloat(K_FONT_SCALE, 1f))
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()

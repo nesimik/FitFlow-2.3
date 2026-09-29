@@ -61,6 +61,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -221,7 +225,8 @@ private fun LookPage(vm: AppViewModel) {
     val accent by s.accent.collectAsStateWithLifecycle()
     val amoled by s.amoled.collectAsStateWithLifecycle()
     val fontScale by s.fontScale.collectAsStateWithLifecycle()
-    val cardGrad by s.cardGradient.collectAsStateWithLifecycle()
+    val cardGlow by s.cardGlow.collectAsStateWithLifecycle()
+    var showPicker by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         ThemePreview()
         FitCard {
@@ -232,7 +237,16 @@ private fun LookPage(vm: AppViewModel) {
             }
             Spacer(Modifier.height(6.dp))
             LabeledSwitch("AMOLED siyah", "Tam siyah zemin, kartlar koyu gri; pil dostu", amoled) { s.setAmoled(it) }
-            LabeledSwitch("Kartlarda renk geçişi", "Kartların köşesinde vurgu renginden hafif geçiş", cardGrad) { s.setCardGradient(it) }
+            Spacer(Modifier.height(6.dp))
+            OverlineText(if (cardGlow <= 0.01f) "Kartlarda renk geçişi · kapalı" else "Kartlarda renk geçişi · %${(cardGlow * 100).toInt()}")
+            Slider(
+                value = cardGlow,
+                onValueChange = { s.setCardGlow((it * 20).toInt() / 20f) },
+                valueRange = 0f..1f,
+                colors = SliderDefaults.colors(thumbColor = MaterialTheme.fit.accent, activeTrackColor = MaterialTheme.fit.accent)
+            )
+            Text("Sola çekersen kartlar düz olur; sağa çektikçe köşedeki vurgu rengi belirginleşir.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
         }
         FitCard {
             OverlineText("Vurgu rengi")
@@ -252,6 +266,34 @@ private fun LookPage(vm: AppViewModel) {
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            val custom = Palette.accentPresets.none { it.second.equals(accent, true) }
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.fit.elevated)
+                    .clickable { showPicker = true }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).background(
+                        Brush.sweepGradient(listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red))
+                    ),
+                    contentAlignment = Alignment.Center
+                ) { Box(Modifier.size(16.dp).clip(CircleShape).background(MaterialTheme.fit.accent)) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Özel renk", style = MaterialTheme.typography.titleSmall)
+                    Text(if (custom) "Seçili: ${accent.uppercase()}" else "Sınırsız palet: istediğin tonu seç",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.fit.muted)
+            }
+        }
+        if (showPicker) {
+            ColorPickerDialog(
+                initial = parseHex(accent),
+                onPick = { hex -> s.setAccent(hex); showPicker = false },
+                onDismiss = { showPicker = false }
+            )
         }
         FitCard {
             OverlineText("Yazı boyutu · %${(fontScale * 100).toInt()}")
@@ -661,5 +703,90 @@ private fun AboutPage() {
             }
             runCatching { context.startActivity(Intent.createChooser(intent, "Geri bildirim gönder")) }
         }, Modifier.fillMaxWidth(), Icons.Default.Mail)
+    }
+}
+
+
+/* ------------------------------ Sınırsız renk seçici ----------------------------- */
+
+/** HSV renk seçici: doygunluk/parlaklık alanı + ton şeridi + HEX kodu. */
+@Composable
+private fun ColorPickerDialog(initial: Color, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val hsv0 = remember {
+        FloatArray(3).also { android.graphics.Color.colorToHSV(android.graphics.Color.rgb(
+            (initial.red * 255).toInt(), (initial.green * 255).toInt(), (initial.blue * 255).toInt()), it) }
+    }
+    var hue by remember { mutableStateOf(hsv0[0]) }
+    var sat by remember { mutableStateOf(hsv0[1]) }
+    var value by remember { mutableStateOf(hsv0[2]) }
+    val color = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value)))
+    val hex = "#%06X".format(0xFFFFFF and android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value)))
+    var hexText by remember { mutableStateOf(hex) }
+    androidx.compose.runtime.LaunchedEffect(hex) { hexText = hex }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Özel vurgu rengi", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                // Doygunluk (yatay) × parlaklık (dikey)
+                val pure = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, 1f)))
+                Box(
+                    Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(14.dp))
+                        .background(Brush.horizontalGradient(listOf(Color.White, pure)))
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                        .pointerInputSv { x, y -> sat = x; value = 1f - y }
+                ) {
+                    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                        val c = androidx.compose.ui.geometry.Offset(sat * size.width, (1f - value) * size.height)
+                        drawCircle(Color.White, radius = 11.dp.toPx(), center = c, style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+                        drawCircle(Color.Black.copy(alpha = 0.4f), radius = 13.dp.toPx(), center = c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                    }
+                }
+                // Ton şeridi
+                Box(
+                    Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(14.dp))
+                        .background(Brush.horizontalGradient((0..6).map { Color(android.graphics.Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f))) }))
+                        .pointerInputSv { x, _ -> hue = (x * 360f).coerceIn(0f, 359.9f) }
+                ) {
+                    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                        val x = hue / 360f * size.width
+                        drawCircle(Color.White, radius = size.height / 2 - 2.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, size.height / 2),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(color))
+                    Box(Modifier.weight(1f)) {
+                        FitTextField(hexText, { t ->
+                            hexText = t
+                            val clean = t.trim().removePrefix("#")
+                            if (clean.length == 6 && clean.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
+                                val c = android.graphics.Color.parseColor("#$clean")
+                                val h = FloatArray(3); android.graphics.Color.colorToHSV(c, h)
+                                hue = h[0]; sat = h[1]; value = h[2]
+                            }
+                        }, "HEX kodu")
+                    }
+                }
+                if (value < 0.35f) {
+                    Text("Çok koyu renkler koyu temada az görünür.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.warning)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(hex) }) { Text("Uygula", color = color) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
+    )
+}
+
+/** Dokunma ve sürüklemeyi 0..1 aralığında (x, y) olarak bildirir. */
+private fun Modifier.pointerInputSv(onChange: (Float, Float) -> Unit): Modifier = this.pointerInput(Unit) {
+    fun emit(p: androidx.compose.ui.geometry.Offset) =
+        onChange((p.x / size.width).coerceIn(0f, 1f), (p.y / size.height).coerceIn(0f, 1f))
+    awaitEachGesture {
+        val down = awaitFirstDown()
+        emit(down.position)
+        drag(down.id) { change -> change.consume(); emit(change.position) }
     }
 }

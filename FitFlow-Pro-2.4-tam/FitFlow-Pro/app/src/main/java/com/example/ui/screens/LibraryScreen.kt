@@ -841,19 +841,41 @@ fun ExerciseBrowserDialog(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            if (multi && selected.isNotEmpty()) {
+            // Süperset: seçimler ve onay düğmesi üstte — alt gezinme çubuğu hiçbir telefonda örtemez.
+            if (multi) {
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    selected.forEachIndexed { i, e ->
-                        Badge("${i + 1}. ${e.name}", MaterialTheme.fit.accent)
+                    Row(
+                        Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (selected.isEmpty()) {
+                            Text("Hareketlere dokunarak sırayla seç", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                        }
+                        selected.forEachIndexed { i, e -> Badge("${i + 1}. ${e.name}", MaterialTheme.fit.accent) }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    val ready = selected.size >= 2
+                    Box(
+                        Modifier.clip(RoundedCornerShape(14.dp))
+                            .background(if (ready) MaterialTheme.fit.accent else MaterialTheme.fit.elevated)
+                            .clickable(enabled = ready) { onPickMany(selected.toList()) }
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            if (ready) "Oluştur (${selected.size})" else "${selected.size}/2",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (ready) MaterialTheme.fit.onAccent else MaterialTheme.fit.muted
+                        )
                     }
                 }
+                Spacer(Modifier.height(4.dp))
             }
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(start = 20.dp, end = 16.dp, bottom = 24.dp)
+                contentPadding = PaddingValues(start = 20.dp, end = 16.dp, bottom = 96.dp)
             ) {
                 if (muscleKeys != null) {
                     item {
@@ -883,21 +905,6 @@ fun ExerciseBrowserDialog(
                         },
                         onFavorite = { vm.toggleFavorite(ex) },
                         selectionIndex = if (multi) idx + 1 else null
-                    )
-                }
-            }
-            if (multi) {
-                Box(
-                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
-                ) {
-                    com.example.ui.components.AccentButton(
-                        if (selected.size >= 2) "Süperset oluştur (${selected.size})" else "En az 2 hareket seç",
-                        { onPickMany(selected.toList()) },
-                        Modifier.fillMaxWidth(),
-                        Icons.Default.Add,
-                        enabled = selected.size >= 2
                     )
                 }
             }
