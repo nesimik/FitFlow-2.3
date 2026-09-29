@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -79,6 +81,7 @@ import com.example.ui.components.RoundIconButton
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatTile
 import com.example.ui.theme.Palette
+import com.example.ui.theme.mono
 import com.example.ui.theme.fit
 import java.util.Calendar
 import androidx.compose.material.icons.filled.Close
@@ -430,6 +433,16 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
     var showPicker by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
     val accentArgb = MaterialTheme.fit.accent.toArgb()
+    // 2.27: geçmiş kayıt varsayılan olarak kilitli; düzenleme onayla açılır, silmeler ayrıca onaylanır.
+    var editMode by remember(workoutId) { mutableStateOf(false) }
+    // Yeni oluşturulmuş (boş) geçmiş seans doğrudan düzenleme modunda açılır
+    androidx.compose.runtime.LaunchedEffect(workoutId) {
+        kotlinx.coroutines.delay(400)
+        if (vm.allSets.value.none { it.workoutId == workoutId }) editMode = true
+    }
+    var askEdit by remember { mutableStateOf(false) }
+    var exToDelete by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    var setToDelete by remember { mutableStateOf<WorkoutSetEntity?>(null) }
 
     val w = workouts.firstOrNull { it.id == workoutId }
     if (w == null) {
@@ -501,6 +514,27 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item(key = "lock") {
+                val c = if (editMode) Palette.warning else MaterialTheme.fit.muted
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .background(c.copy(alpha = if (editMode) 0.12f else 0.08f))
+                        .clickable { if (editMode) editMode = false else askEdit = true }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(if (editMode) Icons.Default.LockOpen else Icons.Default.Lock, null, tint = c, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (editMode) "Düzenleme açık" else "Kayıt kilitli", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            if (editMode) "Değişiklikler rekorları ve istatistikleri etkiler" else "Set, hareket değiştirmek veya silmek için kilidi aç",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted
+                        )
+                    }
+                    Text(if (editMode) "Bitti" else "Düzenle", style = MaterialTheme.typography.labelLarge, color = if (editMode) Palette.warning else MaterialTheme.fit.accent)
+                }
+            }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatTile("Süre", formatDuration(w.durationSeconds), Modifier.weight(1f))
@@ -578,8 +612,8 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                                     color = MaterialTheme.fit.muted
                                 )
                             }
-                            IconButton(onClick = { vm.removeExerciseFromWorkoutByOrder(workoutId, order) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Hareketi Sil", tint = MaterialTheme.fit.muted, modifier = Modifier.size(20.dp))
+                            if (editMode) IconButton(onClick = { exToDelete = order to firstSet.exerciseName }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Hareketi Sil", tint = MaterialTheme.fit.danger, modifier = Modifier.size(20.dp))
                             }
                         }
                         Spacer(Modifier.height(10.dp))
@@ -588,9 +622,11 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                                 set = s,
                                 exercise = ex,
                                 onUpdate = { vm.updateSet(it) },
-                                onDelete = { vm.deleteSet(s) }
+                                onDelete = { setToDelete = s },
+                                editable = editMode
                             )
                         }
+                        if (editMode) {
                         Spacer(Modifier.height(6.dp))
                         TextButton(
                             onClick = { vm.addSetRowToWorkout(workoutId, order, exId) },
@@ -600,11 +636,12 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                             Spacer(Modifier.width(4.dp))
                             Text("+ Set Ekle")
                         }
+                        }
                     }
                 }
             }
 
-            item {
+            if (editMode) item {
                 GhostButton(
                     text = "Seansa Hareket Ekle",
                     icon = Icons.Default.Add,
@@ -639,6 +676,37 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
         )
     }
 
+    if (askEdit) {
+        ConfirmDialog(
+            title = "Geçmiş kaydı düzenle",
+            text = "Bu seansı düzenlemek üzeresin. Ağırlık, tekrar ve set değişiklikleri rekorları, ilerleme grafiklerini ve önerileri etkiler. Devam edilsin mi?",
+            confirmLabel = "Düzenle",
+            onConfirm = { editMode = true; askEdit = false },
+            onDismiss = { askEdit = false }
+        )
+    }
+    exToDelete?.let { (order, name) ->
+        ConfirmDialog(
+            title = "Hareketi sil",
+            text = "\"$name\" ve bu seanstaki tüm setleri silinecek. Emin misin?",
+            confirmLabel = "Sil",
+            destructive = true,
+            onConfirm = { vm.removeExerciseFromWorkoutByOrder(workoutId, order); exToDelete = null },
+            onDismiss = { exToDelete = null }
+        )
+    }
+    setToDelete?.let { st ->
+        ConfirmDialog(
+            title = "Seti sil",
+            text = "${st.exerciseName} · ${if (st.isWarmup) "ısınma seti" else "${st.setNumber}. set"}" +
+                (if (st.weightKg > 0f || st.reps > 0) " (${st.weightKg.trimNum()} kg × ${st.reps})" else "") + " silinecek. Emin misin?",
+            confirmLabel = "Sil",
+            destructive = true,
+            onConfirm = { vm.deleteSet(st); setToDelete = null },
+            onDismiss = { setToDelete = null }
+        )
+    }
+
     if (toDelete) {
         ConfirmDialog(
             title = "Seansı sil",
@@ -656,9 +724,34 @@ private fun SetDetailEditRow(
     set: WorkoutSetEntity,
     exercise: com.example.data.ExerciseEntity?,
     onUpdate: (WorkoutSetEntity) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    editable: Boolean = true
 ) {
     val isDuration = exercise?.trackingType == com.example.data.ExerciseEntity.TRACK_DURATION || set.durationSeconds > 0
+    if (!editable) {
+        // Salt okunur satır
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))
+                    .background(if (set.isWarmup) Palette.warning.copy(alpha = 0.15f) else MaterialTheme.fit.elevated),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (set.isWarmup) "W" else "${set.setNumber}", style = MaterialTheme.typography.labelSmall,
+                    color = if (set.isWarmup) Palette.warning else MaterialTheme.fit.muted)
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                when {
+                    isDuration -> "${set.durationSeconds} sn"
+                    set.weightKg > 0f -> "${set.weightKg.trimNum()} kg × ${set.reps}"
+                    else -> "${set.reps} tekrar"
+                },
+                style = MaterialTheme.typography.bodyMedium.mono(), modifier = Modifier.weight(1f)
+            )
+            if (set.rpe > 0f) Text("RPE ${set.rpe.trimNum()}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+        }
+        return
+    }
     val isRepsOnly = exercise?.trackingType == com.example.data.ExerciseEntity.TRACK_REPS
 
     var weightText by remember(set.weightKg) { mutableStateOf(if (set.weightKg > 0f) set.weightKg.trimNum() else "") }

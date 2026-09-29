@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -255,7 +257,16 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
             }
         }
 
-        /* 4) Son antrenmanlar */
+        /* 4) Dört haftalık özet (2.27) */
+        if (workouts.any { it.isFinished }) {
+            item {
+                Box(Modifier.padding(horizontal = 16.dp)) {
+                    SummaryCard(workouts = workouts, sets = allSets, prs = prs, onOpen = { vm.setStatsTab(0); goTab(Routes.STATS) })
+                }
+            }
+        }
+
+        /* 5) Son antrenmanlar */
         val recent = workouts.filter { it.isFinished }.sortedByDescending { it.startedAt }.take(3)
         if (recent.isNotEmpty()) {
             item {
@@ -1264,4 +1275,154 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
     in 12..17 -> "İyi günler"
     in 18..22 -> "İyi akşamlar"
     else -> "İyi geceler"
+}
+
+
+/* ------------------------------ Dört haftalık özet ------------------------------ */
+
+private const val WEEK_MS = 7L * 24 * 3600 * 1000
+
+/**
+ * Son 28 gün, önceki 28 günle karşılaştırmalı: antrenman, hacim, rekor, ortalama süre;
+ * 8 haftalık hacim çubukları ve dönemin en çok gelişen hareketi.
+ */
+@Composable
+private fun SummaryCard(
+    workouts: List<WorkoutEntity>,
+    sets: List<WorkoutSetEntity>,
+    prs: List<com.example.data.PrEntity>,
+    onOpen: () -> Unit
+) {
+    val data = remember(workouts, sets, prs) {
+        val now = System.currentTimeMillis()
+        val weekStart = startOfWeek(now)
+        val from = now - 4 * WEEK_MS
+        val prevFrom = now - 8 * WEEK_MS
+        val done = workouts.filter { it.isFinished }
+        val cur = done.filter { it.startedAt >= from }
+        val prev = done.filter { it.startedAt in prevFrom until from }
+        val byW = sets.filter { Analytics.isEffectiveSet(it) }.groupBy { it.workoutId }
+        fun vol(ws: List<WorkoutEntity>) = ws.sumOf { w -> byW[w.id].orEmpty().sumOf { (it.weightKg * it.reps).toDouble() } }.toFloat()
+        fun mins(ws: List<WorkoutEntity>) = ws.map { w ->
+            (w.durationSeconds.takeIf { it > 0 } ?: w.finishedAt?.let { ((it - w.startedAt) / 1000L).toInt() } ?: 0) / 60
+        }.filter { it > 0 }.let { if (it.isEmpty()) 0 else it.average().toInt() }
+        val curIds = cur.map { it.id }.toSet()
+        val prevIds = prev.map { it.id }.toSet()
+        // 8 haftalık hacim (bu hafta dahil)
+        val weeks = (7 downTo 0).map { i ->
+            val a = weekStart - i * WEEK_MS
+            vol(done.filter { it.startedAt >= a && it.startedAt < a + WEEK_MS })
+        }
+        // En çok gelişen hareket: dönem en iyi e1RM − önceki dönem en iyi e1RM
+        fun best(ids: Set<Long>) = sets.asSequence()
+            .filter { it.workoutId in ids && Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..15 }
+            .groupBy { it.exerciseId }
+            .mapValues { (_, l) -> l.maxOf { com.example.core.Calc.e1rm(it.weightKg, it.reps) } to l.first().exerciseName }
+        val bc = best(curIds); val bp = best(prevIds)
+        val top = bc.mapNotNull { (id, v) -> bp[id]?.let { p -> Triple(v.second, v.first - p.first, v.first) } }
+            .filter { it.second >= 1f }.maxByOrNull { it.second / it.third }
+        SummaryData(
+            cur.size, prev.size, vol(cur), vol(prev),
+            prs.count { it.workoutId in curIds }, mins(cur), weeks, top?.first, top?.second
+        )
+    }
+    val accent = MaterialTheme.fit.accent
+    FitCard(onClick = onOpen, contentPadding = PaddingValues(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Son 4 hafta", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                Text("önceki 4 haftaya göre", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            }
+            val dv = pct(data.volume, data.prevVolume)
+            if (dv != null) DeltaPill(dv)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth()) {
+            SummaryMetric("${data.workouts}", "antrenman", pct(data.workouts.toFloat(), data.prevWorkouts.toFloat()), Modifier.weight(1f))
+            SummaryDivider()
+            SummaryMetric(formatTonnage(data.volume), "hacim", null, Modifier.weight(1f))
+            SummaryDivider()
+            SummaryMetric("${data.prCount}", "rekor", null, Modifier.weight(1f), if (data.prCount > 0) Palette.gold else null)
+            SummaryDivider()
+            SummaryMetric(if (data.avgMin > 0) "${data.avgMin}" else "—", "dk / seans", null, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(14.dp))
+        // 8 haftalık hacim çubukları
+        val maxV = (data.weeks.maxOrNull() ?: 0f).coerceAtLeast(1f)
+        val muted = MaterialTheme.fit.elevated
+        Row(Modifier.fillMaxWidth().height(44.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+            data.weeks.forEachIndexed { i, v ->
+                val last = i == data.weeks.lastIndex
+                Box(
+                    Modifier.weight(1f).fillMaxHeight((v / maxV).coerceIn(0.06f, 1f))
+                        .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp, bottomStart = 2.dp, bottomEnd = 2.dp))
+                        .background(
+                            when {
+                                last -> accent
+                                i >= data.weeks.size - 4 -> accent.copy(alpha = 0.45f)
+                                else -> muted
+                            }
+                        )
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Text("8 hafta önce", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1f))
+            Text("bu hafta", style = MaterialTheme.typography.labelSmall, color = accent)
+        }
+        if (data.topName != null && data.topGain != null) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.fit.success.copy(alpha = 0.10f))
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MaterialTheme.fit.success, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "En çok gelişen: ${data.topName}",
+                    style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                )
+                Text("1RM +${data.topGain.trimNum()} kg", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.success)
+            }
+        }
+    }
+}
+
+private data class SummaryData(
+    val workouts: Int, val prevWorkouts: Int, val volume: Float, val prevVolume: Float,
+    val prCount: Int, val avgMin: Int, val weeks: List<Float>, val topName: String?, val topGain: Float?
+)
+
+private fun pct(cur: Float, prev: Float): Int? = if (prev <= 0f) null else Math.round((cur - prev) / prev * 100f)
+
+@Composable
+private fun DeltaPill(d: Int) {
+    val c = if (d >= 0) MaterialTheme.fit.success else MaterialTheme.fit.warning
+    Text(
+        "hacim ${if (d >= 0) "+" else "−"}%${kotlin.math.abs(d)}",
+        style = MaterialTheme.typography.labelMedium.mono().copy(fontWeight = FontWeight.SemiBold), color = c,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun SummaryMetric(value: String, label: String, delta: Int?, modifier: Modifier, color: Color? = null) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium.mono().copy(fontWeight = FontWeight.SemiBold), color = color ?: MaterialTheme.colorScheme.onSurface, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, maxLines = 1)
+        if (delta != null && delta != 0) {
+            Text(
+                "${if (delta > 0) "+" else "−"}%${kotlin.math.abs(delta)}",
+                style = MaterialTheme.typography.labelSmall.mono(),
+                color = if (delta > 0) MaterialTheme.fit.success else MaterialTheme.fit.warning
+            )
+        }
+    }
+}
+
+@Composable
+private fun SummaryDivider() {
+    Box(Modifier.width(1.dp).height(34.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
 }
