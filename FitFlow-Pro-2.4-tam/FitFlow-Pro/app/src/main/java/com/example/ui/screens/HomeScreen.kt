@@ -113,6 +113,7 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
     val prs by vm.prs.collectAsStateWithLifecycle()
     val weekLoads by vm.weeklyMuscleLoads.collectAsStateWithLifecycle()
     val weekDetail by vm.weeklyDetailLoads.collectAsStateWithLifecycle()
+    val progressIds by vm.progressExerciseIds.collectAsStateWithLifecycle()
 
     var showCancelActiveDialog by remember { mutableStateOf(false) }
     var hasPreDeloadBackup by remember { mutableStateOf(vm.settings.getPreDeloadBackup().isNotBlank()) }
@@ -261,7 +262,7 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
         if (workouts.any { it.isFinished }) {
             item {
                 Box(Modifier.padding(horizontal = 16.dp)) {
-                    SummaryCard(workouts = workouts, sets = allSets, prs = prs, onOpen = { vm.setStatsTab(0); goTab(Routes.STATS) })
+                    SummaryCard(workouts = workouts, sets = allSets, prs = prs, visibleIds = progressIds, onOpen = { vm.setStatsTab(0); goTab(Routes.STATS) })
                 }
             }
         }
@@ -1291,9 +1292,10 @@ private fun SummaryCard(
     workouts: List<WorkoutEntity>,
     sets: List<WorkoutSetEntity>,
     prs: List<com.example.data.PrEntity>,
+    visibleIds: Set<Long>?,
     onOpen: () -> Unit
 ) {
-    val data = remember(workouts, sets, prs) {
+    val data = remember(workouts, sets, prs, visibleIds) {
         val now = System.currentTimeMillis()
         val weekStart = startOfWeek(now)
         val from = now - 4 * WEEK_MS
@@ -1316,6 +1318,7 @@ private fun SummaryCard(
         // En çok gelişen hareket: dönem en iyi e1RM − önceki dönem en iyi e1RM
         fun best(ids: Set<Long>) = sets.asSequence()
             .filter { it.workoutId in ids && Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..15 }
+            .filter { visibleIds == null || it.exerciseId in visibleIds }
             .groupBy { it.exerciseId }
             .mapValues { (_, l) -> l.maxOf { com.example.core.Calc.e1rm(it.weightKg, it.reps) } to l.first().exerciseName }
         val bc = best(curIds); val bp = best(prevIds)

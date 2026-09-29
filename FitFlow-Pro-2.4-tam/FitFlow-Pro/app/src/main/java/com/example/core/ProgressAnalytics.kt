@@ -120,8 +120,21 @@ data class LiftStandard(
     val level: String,
     val levelIndex: Int,
     val nextLevel: String?,
-    val nextLevelWeight: Float
-)
+    val nextLevelWeight: Float,
+    /** Seviye eşikleri (kg): Acemi, Orta, İleri, Çok İleri, Elit başlangıçları. */
+    val thresholdsKg: List<Float> = emptyList()
+) {
+    /** 0..6 arası kesirli seviye konumu (her seviye eşit genişlikte). */
+    val position: Float get() {
+        if (thresholdsKg.isEmpty()) return levelIndex.toFloat()
+        val i = levelIndex
+        if (i >= thresholdsKg.size) return thresholdsKg.size + 1f - 0.001f
+        val lo = if (i == 0) 0f else thresholdsKg[i - 1]
+        val hi = thresholdsKg[i]
+        return i + ((e1rm - lo) / (hi - lo).coerceAtLeast(0.01f)).coerceIn(0f, 0.999f)
+    }
+    companion object { val LEVELS = listOf("Başlangıç", "Acemi", "Orta", "İleri", "Çok İleri", "Elit") }
+}
 
 data class LiftBalanceItem(
     val displayName: String,
@@ -529,7 +542,8 @@ object ProgressAnalytics {
                 level = levelNames[idx],
                 levelIndex = idx,
                 nextLevel = next,
-                nextLevelWeight = nextWeight
+                nextLevelWeight = nextWeight,
+                thresholdsKg = thresholds.map { it * bodyWeightKg }
             )
         }
     }

@@ -654,6 +654,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.29" to "Programdan çıkan ve 14 gündür yapılmayan hareketler ilerleme ekranlarında gizlenir; programa geri eklenince geçmişiyle birlikte döner. Yeni güç seviyesi merdiveni.",
     "2.28" to "Güç sekmesi: güç özeti, dönem seçmeli 1RM grafiği (rekor noktaları, eğilim), 1RM hedefi ve tahmini süre, tekrar–ağırlık tablosu, plato uyarıları. Kaslar: kas × hafta ısı haritası, program uyumu, kas detayında güç göstergesi.",
     "2.27" to "Geçmiş seanslar kilitli açılır; düzenleme ve hareket/set silme onay ister. Ana ekranda 4 haftalık özet kartı.",
     "2.26" to "Akıllı öneriler: seansı uzatmayan değişim önerileri, iki seçenekli kartlar ve süre etkisi, tekrar eden hareket / sıralama / dinlenme analizi. Öneriler kas haritasında ve program kapsam kartında. Açık seans şeridi daha belirgin.",

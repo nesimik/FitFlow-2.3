@@ -132,6 +132,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             days.filter { routine != null && it.routineId == routine.id }.sortedBy { it.orderIndex }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * 2.29: İlerleme ekranlarında görünen hareketler — aktif programdakiler + son 14 günde yapılanlar.
+     * null = filtre yok (aktif program boş).
+     */
+    val progressExerciseIds: StateFlow<Set<Long>?> =
+        combine(routineDays, allItems, allSets) { d, i, s -> com.example.core.ExerciseVisibility.visible(d, i, s) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** İlerleme analizleri için setler (programdan çıkmış eski hareketler hariç). */
+    val progressSets: StateFlow<List<WorkoutSetEntity>> =
+        combine(allSets, progressExerciseIds) { s, ids -> if (ids == null) s else s.filter { it.exerciseId in ids } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _isReady = MutableStateFlow(false)
     val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
 
@@ -159,7 +172,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val weeklyMuscleSets = weeklyMuscleSetsInfo.map { it.setsPerMuscle }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    val bestLifts = allSets.map { Analytics.bestE1rmByExercise(it) }
+    val bestLifts = progressSets.map { Analytics.bestE1rmByExercise(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /* ---------------------- Gelişmiş ilerleme analizleri ---------------------- */
@@ -201,17 +214,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Uzun süredir rekor kırılmayan hareketler. */
     val stagnantLifts: StateFlow<List<StagnantLift>> =
-        allSets.map { ProgressAnalytics.stagnation(it) }
+        progressSets.map { ProgressAnalytics.stagnation(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Son seansta ilerleme kaydedilen hareketler. */
     val improvingLifts: StateFlow<List<StagnantLift>> =
-        allSets.map { ProgressAnalytics.improving(it) }
+        progressSets.map { ProgressAnalytics.improving(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Ana hareketlerde vücut ağırlığına göre güç seviyesi. */
     val strengthProfile: StateFlow<List<LiftStandard>> =
-        combine(allSets, settings.weightKg, settings.isMale) { s, bw, male ->
+        combine(progressSets, settings.weightKg, settings.isMale) { s, bw, male ->
             ProgressAnalytics.strengthProfile(s, bw, male)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

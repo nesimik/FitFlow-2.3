@@ -1000,7 +1000,8 @@ private fun MusclesTab(vm: AppViewModel, nav: NavHostController) {
                                 periodWeeks = periodWeeks
                             )
                         }
-                        val strength = remember(key, allSets, exercises) { com.example.core.StrengthInsights.muscleStrength(key, allSets, exercises) }
+                        val progSets by vm.progressSets.collectAsStateWithLifecycle()
+                        val strength = remember(key, progSets, exercises) { com.example.core.StrengthInsights.muscleStrength(key, progSets, exercises) }
                         strength?.let { st ->
                             Spacer(Modifier.height(12.dp))
                             MuscleStrengthRow(st) { nav.navigate("${Routes.EXERCISE}/${st.exerciseId}") }
@@ -1149,7 +1150,8 @@ private fun TargetRangeBar(value: Float, lo: Int, hi: Int, color: Color) {
 private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
     val profile by vm.strengthProfile.collectAsStateWithLifecycle()
     val bestLifts by vm.bestLifts.collectAsStateWithLifecycle()
-    val allSets by vm.allSets.collectAsStateWithLifecycle()
+    // 2.29: programdan çıkmış ve 14 gündür yapılmayan hareketler gizli
+    val allSets by vm.progressSets.collectAsStateWithLifecycle()
     val exercises by vm.exercises.collectAsStateWithLifecycle()
     val bodyWeight by vm.settings.weightKg.collectAsStateWithLifecycle()
     val isMale by vm.settings.isMale.collectAsStateWithLifecycle()
@@ -1180,7 +1182,7 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
                 val distinctWorkouts = sets.map { s -> s.workoutId }.distinct().size
                 if (distinctWorkouts < 2) return@filter false
                 val latestSetTime = sets.maxOfOrNull { it.performedAt } ?: 0L
-                entry.key in activeExerciseIds || latestSetTime >= threeWeeksCutoff
+                entry.key in activeExerciseIds || latestSetTime >= threeWeeksCutoff || activeExerciseIds.isEmpty()
             }
             .entries
             .sortedByDescending { it.value.maxOfOrNull { s -> s.performedAt } ?: 0L }
@@ -1222,6 +1224,7 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
         } else {
             /* 1) Güç özeti */
             item { StrengthSummaryCard(profile, total, bodyWeight, change12) }
+            item { StrengthLevelsCard(profile, bodyWeight) { id -> nav.navigate("${Routes.EXERCISE}/$id") } }
         }
 
         /* 2) 1RM gelişimi + hedef */
@@ -1272,17 +1275,8 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
             item { PlateauCard(plateaus) { id -> nav.navigate("${Routes.EXERCISE}/$id") } }
         }
 
-        /* 5) Seviyeler ve denge */
+        /* 5) Lift dengesi */
         if (profile.isNotEmpty()) {
-            item {
-                Column {
-                    SectionHeader("Güç seviyesi", "Vücut ağırlığı: ${bodyWeight.trimNum()} kg")
-                    Spacer(Modifier.height(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        profile.forEach { lift -> LiftStandardCard(lift, nav) }
-                    }
-                }
-            }
             if (balance.isNotEmpty()) {
                 item { LiftBalanceCard(balance) }
             }

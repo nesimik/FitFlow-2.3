@@ -244,3 +244,27 @@ object StrengthInsights {
         return if (old <= 0f || cur <= 0f) null else cur - old
     }
 }
+
+/* ---------------------------- İlerlemede görünen hareketler ---------------------------- */
+
+object ExerciseVisibility {
+    /** Programda olmayan ve bu kadar gündür yapılmayan hareketler ilerleme ekranlarında gizlenir. */
+    const val GRACE_DAYS = 14
+
+    /**
+     * Aktif programdaki hareketler + son [GRACE_DAYS] günde yapılanlar.
+     * Aktif program boşsa null (filtre yok). Hareket programa geri eklenince eski kayıtları da geri gelir.
+     */
+    fun visible(
+        activeDays: List<RoutineDayEntity>,
+        items: List<RoutineItemEntity>,
+        sets: List<WorkoutSetEntity>,
+        now: Long = System.currentTimeMillis()
+    ): Set<Long>? {
+        val dayIds = activeDays.map { it.id }.toSet()
+        val inProgram = items.filter { it.dayId in dayIds }.map { it.exerciseId }.toSet()
+        if (inProgram.isEmpty()) return null
+        val cutoff = now - GRACE_DAYS * StrengthInsights.DAY_MS
+        return inProgram + sets.filter { it.performedAt >= cutoff }.map { it.exerciseId }
+    }
+}

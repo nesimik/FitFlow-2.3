@@ -123,20 +123,6 @@ internal fun StrengthSummaryCard(profile: List<LiftStandard>, total: Float, body
         } else {
             Text("Toplam için squat, bench ve deadlift kaydı gerekir.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
         }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            profile.forEach { l ->
-                val c = levelColor(l.levelIndex)
-                Column(
-                    Modifier.clip(RoundedCornerShape(14.dp)).background(c.copy(alpha = 0.10f))
-                        .border(1.dp, c.copy(alpha = 0.3f), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(l.displayName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted, maxLines = 1)
-                    Text(l.e1rm.kg(), style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold))
-                    Text(l.level, style = MaterialTheme.typography.labelSmall, color = c)
-                }
-            }
-        }
     }
 }
 
@@ -611,3 +597,106 @@ internal fun MuscleStrengthRow(m: StrengthInsights.MuscleStrength, onOpen: () ->
 
 @Suppress("unused")
 private fun statusOf(k: String, v: Float): LoadStatus = MuscleLoad(k, v, 0f, -1, MuscleMap.weeklyTarget(k)).status
+
+
+/* ------------------------------ Güç seviyesi (2.29) ------------------------------ */
+
+/**
+ * Tüm ana hareketler tek kartta: her satırda 6 eşit dilimli seviye merdiveni
+ * (Başlangıç → Elit), bulunduğun nokta ve bir sonraki seviyeye kalan kilo.
+ */
+@Composable
+internal fun StrengthLevelsCard(profile: List<LiftStandard>, bodyWeight: Float, onOpen: (Long) -> Unit) {
+    val levels = LiftStandard.LEVELS
+    val overallPos = profile.map { it.position }.average().toFloat()
+    val overallIdx = overallPos.toInt().coerceIn(0, levels.lastIndex)
+    val oc = levelColor(overallIdx)
+    FitCard(contentPadding = PaddingValues(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Güç seviyesi", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                Text(
+                    "Vücut ağırlığına göre" + if (bodyWeight > 0f) " · ${bodyWeight.tr()} kg" else "",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("Genel", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                Text(
+                    levels[overallIdx], style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = oc,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(oc.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 3.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        // Seviye başlıkları
+        Row(Modifier.fillMaxWidth()) {
+            levels.forEachIndexed { i, l ->
+                Text(
+                    l.replace("Çok İleri", "Ç. İleri").replace("Başlangıç", "Başl."),
+                    style = MaterialTheme.typography.labelSmall, color = levelColor(i),
+                    modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        profile.forEachIndexed { n, lift ->
+            if (n > 0) Box(Modifier.fillMaxWidth().padding(vertical = 10.dp).height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
+            else Spacer(Modifier.height(6.dp))
+            LevelLadderRow(lift, onOpen)
+        }
+    }
+}
+
+@Composable
+private fun LevelLadderRow(lift: LiftStandard, onOpen: (Long) -> Unit) {
+    val c = levelColor(lift.levelIndex)
+    val pos = lift.position
+    val segs = LiftStandard.LEVELS.size
+    val segColors = (0 until segs).map { levelColor(it) }
+    val empty = MaterialTheme.fit.elevated
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onOpen(lift.exerciseId) }) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(lift.displayName, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(lift.e1rm.kg(), style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold))
+            Spacer(Modifier.width(6.dp))
+            Text("${lift.bodyweightRatio.tr()}×", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.muted)
+        }
+        Spacer(Modifier.height(8.dp))
+        Canvas(Modifier.fillMaxWidth().height(22.dp)) {
+            val gap = 3.dp.toPx()
+            val h = 10.dp.toPx()
+            val top = (size.height - h) / 2f
+            val segW = (size.width - gap * (segs - 1)) / segs
+            for (i in 0 until segs) {
+                val x = i * (segW + gap)
+                val r = androidx.compose.ui.geometry.CornerRadius(h / 2f)
+                drawRoundRect(empty, Offset(x, top), androidx.compose.ui.geometry.Size(segW, h), r)
+                val fill = when {
+                    pos >= i + 1 -> 1f
+                    pos > i -> pos - i
+                    else -> 0f
+                }
+                if (fill > 0f) drawRoundRect(segColors[i].copy(alpha = if (i == lift.levelIndex) 1f else 0.55f), Offset(x, top),
+                    androidx.compose.ui.geometry.Size(maxOf(segW * fill, h), h), r)
+            }
+            // İşaretçi
+            val seg = pos.toInt().coerceIn(0, segs - 1)
+            val mx = seg * (segW + gap) + segW * (pos - seg).coerceIn(0f, 1f)
+            drawCircle(onSurface, 7.dp.toPx(), Offset(mx, size.height / 2f))
+            drawCircle(c, 4.5.dp.toPx(), Offset(mx, size.height / 2f))
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(lift.level, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = c)
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (lift.nextLevel != null && lift.nextLevelWeight > lift.e1rm)
+                    "${lift.nextLevel}: +${(lift.nextLevelWeight - lift.e1rm).tr()} kg"
+                else "En üst seviye",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted
+            )
+        }
+    }
+}
