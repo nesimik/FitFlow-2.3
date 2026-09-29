@@ -138,22 +138,94 @@ class SettingsStore(context: Context) {
     val machineStep: StateFlow<Float> = _machineStep.asStateFlow()
     fun setMachineStep(v: Float) { _machineStep.value = v; prefs.edit().putFloat(K_MACHINE_STEP, v).apply() }
 
+    /** Salondaki plakalar (tek plaka, kg). */
+    private val _plates = flow(parseFloats(prefs.getString(K_PLATES, "") ?: "").ifEmpty { com.example.core.LoadingProfile.DEFAULT_PLATES })
+    val plates: StateFlow<List<Float>> = _plates.asStateFlow()
+    fun setPlates(v: List<Float>) {
+        val l = v.filter { it > 0f }.distinct().sortedDescending()
+        _plates.value = l.ifEmpty { com.example.core.LoadingProfile.DEFAULT_PLATES }
+        prefs.edit().putString(K_PLATES, l.joinToString(",")).apply()
+    }
+
+    /** Salondaki sabit dambıllar (tek dambıl, kg). Boş = ayarlanabilir, adım kullanılır. */
+    private val _dumbbells = flow(parseFloats(prefs.getString(K_DUMBBELLS, "") ?: ""))
+    val dumbbells: StateFlow<List<Float>> = _dumbbells.asStateFlow()
+    fun setDumbbells(v: List<Float>) {
+        val l = v.filter { it > 0f }.distinct().sorted()
+        _dumbbells.value = l
+        prefs.edit().putString(K_DUMBBELLS, l.joinToString(",")).apply()
+    }
+
     /** Progresyon motorunun kullandığı güncel ekipman profili. */
     fun loadingProfile(): com.example.core.LoadingProfile = com.example.core.LoadingProfile(
         barKg = _barWeight.value,
         barbellStep = _increment.value,
         dumbbellStep = _dumbbellStep.value,
-        machineStep = _machineStep.value
+        machineStep = _machineStep.value,
+        plates = _plates.value,
+        dumbbells = _dumbbells.value
     )
+
+    /* ------------------------------ Antrenman tercihleri ------------------------------ */
+    private fun boolFlow(key: String, def: Boolean) = flow(prefs.getBoolean(key, def))
+
+    private val _ladderEnabled = boolFlow(K_LADDER_ON, true)
+    /** Kapalıysa tüm hareketlerde klasik aralık (çift progresyon) kullanılır. */
+    val ladderEnabled: StateFlow<Boolean> = _ladderEnabled.asStateFlow()
+    fun setLadderEnabled(v: Boolean) { _ladderEnabled.value = v; prefs.edit().putBoolean(K_LADDER_ON, v).apply() }
+
+    private val _warmupOn = boolFlow(K_WARMUP_ON, true)
+    val warmupOn: StateFlow<Boolean> = _warmupOn.asStateFlow()
+    fun setWarmupOn(v: Boolean) { _warmupOn.value = v; prefs.edit().putBoolean(K_WARMUP_ON, v).apply() }
+
+    private val _rpeOn = boolFlow(K_RPE_ON, true)
+    val rpeOn: StateFlow<Boolean> = _rpeOn.asStateFlow()
+    fun setRpeOn(v: Boolean) { _rpeOn.value = v; prefs.edit().putBoolean(K_RPE_ON, v).apply() }
+
+    private val _prCelebrate = boolFlow(K_PR_CELEBRATE, true)
+    val prCelebrate: StateFlow<Boolean> = _prCelebrate.asStateFlow()
+    fun setPrCelebrate(v: Boolean) { _prCelebrate.value = v; prefs.edit().putBoolean(K_PR_CELEBRATE, v).apply() }
+
+    private val _biometricOn = boolFlow(K_BIOMETRIC, false)
+    val biometricOn: StateFlow<Boolean> = _biometricOn.asStateFlow()
+    fun setBiometricOn(v: Boolean) { _biometricOn.value = v; prefs.edit().putBoolean(K_BIOMETRIC, v).apply() }
 
     /* -------------------------------- Kilit ---------------------------------- */
     private val _lockEnabled = flow(prefs.getBoolean(K_LOCK, false))
     val lockEnabled: StateFlow<Boolean> = _lockEnabled.asStateFlow()
     fun setLockEnabled(v: Boolean) { _lockEnabled.value = v; prefs.edit().putBoolean(K_LOCK, v).apply() }
 
+    /** Şifrenin özeti (SHA-256). Eski sürümlerden kalan düz şifre ilk doğrulamada özetlenir. */
     private val _passcode = flow(prefs.getString(K_PASS, "") ?: "")
+    /** Boş değilse şifre belirlenmiş demektir (değer özettir, şifrenin kendisi değil). */
     val passcode: StateFlow<String> = _passcode.asStateFlow()
-    fun setPasscode(v: String) { _passcode.value = v; prefs.edit().putString(K_PASS, v).apply() }
+    fun setPasscode(v: String) {
+        val h = if (v.isBlank()) "" else hashPin(v)
+        _passcode.value = h
+        prefs.edit().putString(K_PASS, h).putInt(K_PASS_LEN, v.length).apply()
+    }
+
+    /** Şifre hane sayısı (kilit ekranında nokta sayısı ve otomatik kontrol için). */
+    fun passcodeLength(): Int {
+        val stored = _passcode.value
+        if (stored.isBlank()) return 4
+        return if (stored.startsWith("h1:")) prefs.getInt(K_PASS_LEN, 4) else stored.length
+    }
+
+    fun checkPasscode(input: String): Boolean {
+        val stored = _passcode.value
+        if (stored.isBlank()) return true
+        if (stored.startsWith("h1:")) return stored == hashPin(input)
+        val ok = stored == input          // eski düz kayıt
+        if (ok) setPasscode(input)         // özetle ve kaydet
+        return ok
+    }
+
+    private fun hashPin(v: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest(("fitflow:" + v).toByteArray(Charsets.UTF_8))
+        return "h1:" + bytes.joinToString("") { "%02x".format(it) }
+    }
 
     /* -------------------------------- Deload --------------------------------- */
     private val _activeDeloadWeekStart = flow(prefs.getLong(K_DELOAD_WEEK_START, 0L))
@@ -219,7 +291,10 @@ class SettingsStore(context: Context) {
         prefs.edit().putString(K_LADDERS, ladderJson(m)).apply()
     }
 
-    fun ladderFor(itemId: Long?): com.example.core.LadderConfig? = itemId?.let { _ladders.value[it] }
+    /** Hareketin geçerli merdiven ayarı; genel anahtar kapalıysa her zaman "Kapalı". */
+    fun ladderFor(itemId: Long?): com.example.core.LadderConfig? =
+        if (!_ladderEnabled.value) com.example.core.LadderConfig(mode = com.example.core.LadderMode.OFF)
+        else itemId?.let { _ladders.value[it] }
 
     /** Health Connect eşitlemesi açık mı. */
     private val _healthConnectOn = flow(prefs.getBoolean(K_HEALTH, false))
@@ -288,6 +363,12 @@ class SettingsStore(context: Context) {
         const val K_LAST_REPORT_WEEK = "last_report_week"; const val K_LAST_REMINDER_DAY = "last_reminder_day"
         const val K_HEALTH = "health_connect_on"
         const val K_LADDERS = "ladder_configs"
+        const val K_PLATES = "plates"; const val K_DUMBBELLS = "dumbbells"
+        const val K_LADDER_ON = "ladder_on"; const val K_WARMUP_ON = "warmup_on"; const val K_RPE_ON = "rpe_on"
+        const val K_PR_CELEBRATE = "pr_celebrate"; const val K_BIOMETRIC = "biometric_on"; const val K_PASS_LEN = "pass_len"
+
+        fun parseFloats(s: String): List<Float> =
+            s.split(',', ';', ' ').mapNotNull { it.trim().replace(',', '.').toFloatOrNull() }.filter { it > 0f }
 
         fun parseLadders(json: String): Map<Long, com.example.core.LadderConfig> = runCatching {
             if (json.isBlank()) return emptyMap()

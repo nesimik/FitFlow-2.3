@@ -21,7 +21,8 @@ import com.example.ui.AppViewModel
 import com.example.ui.FitFlowApp
 import com.example.ui.theme.FitFlowTheme
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity: parmak izi kilidi (BiometricPrompt) bunu gerektirir; ComponentActivity özelliklerini de taşır. */
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** Dinlenme sayacı bildirimi için (Android 13+). Reddedilirse sayaç uygulama içinde çalışmaya devam eder. */
     private val notificationPermission =

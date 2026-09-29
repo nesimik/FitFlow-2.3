@@ -215,7 +215,7 @@ object TrainingBlock {
                 val step = profile.step(kind).takeIf { it > 0f } ?: 1f
                 if (work < step * 4) emptyList()
                 else listOf(0.5f to 8, 0.75f to 3)
-                    .map { (p, r) -> Calc.roundToNearest(work * p, step) to r }
+                    .map { (p, r) -> profile.round(work * p, kind) to r }
                     .filter { it.first > 0f && it.first < work }
                     .distinctBy { it.first }
             }

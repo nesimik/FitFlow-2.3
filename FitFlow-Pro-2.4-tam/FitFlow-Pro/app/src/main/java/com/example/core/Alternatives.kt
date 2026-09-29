@@ -108,8 +108,7 @@ object Alternatives {
             f == LoadKind.DUMBBELL && t == LoadKind.BARBELL -> w * 2.2f
             else -> return 0f
         }
-        val step = profile.step(t).takeIf { it > 0f } ?: 1f
-        val r = Calc.roundToNearest(raw, step)
+        val r = profile.round(raw, t)
         return if (t == LoadKind.BARBELL) maxOf(r, profile.barKg) else r
     }
 }

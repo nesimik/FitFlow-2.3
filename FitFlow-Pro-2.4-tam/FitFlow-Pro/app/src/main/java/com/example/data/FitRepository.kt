@@ -344,7 +344,7 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         routineName: String = "",
         isDeload: Boolean = false,
         profile: com.example.core.LoadingProfile = com.example.core.LoadingProfile(),
-        ladders: Map<Long, com.example.core.LadderConfig> = emptyMap()
+        ladderFor: (Long) -> com.example.core.LadderConfig? = { null }
     ): Long {
         val now = System.currentTimeMillis()
 
@@ -418,7 +418,7 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                                else com.example.core.loadKindOf(ex.equipment),
                         profile = profile,
                         deload = isDeload,
-                        ladder = com.example.core.Ladders.resolve(ladders[item.id], ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
+                        ladder = com.example.core.Ladders.resolve(ladderFor(item.id), ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
                         exerciseName = ex.name
                     ).takeIf { it.action != com.example.core.ProgressAction.FIRST }
                 }

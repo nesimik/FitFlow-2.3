@@ -337,7 +337,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             .sortedByDescending { it.dateMillis }
                             .take(8)
                         val ladder = com.example.core.Ladders.resolve(
-                            item?.let { ladderCfgs[it.id] },
+                            settings.ladderFor(item?.id), // ladderCfgs değişince yeniden hesaplanır
                             ex?.name ?: sets.first().exerciseName, ex?.muscleGroup ?: "", ex?.equipment ?: "", tracking
                         )
                         val prescription = if (tracking == ExerciseEntity.TRACK_DURATION || exIsWarmup) null
@@ -465,7 +465,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 routineName = routine?.name ?: "",
                 isDeload = shouldDeload,
                 profile = settings.loadingProfile(),
-                ladders = settings.ladderConfigs.value
+                ladderFor = { itemId -> settings.ladderFor(itemId) }
             )
             _elapsed.value = 0
             onStarted(id)
@@ -732,7 +732,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val newPrs = repo.finishWorkout(w.id, duration, notes, feeling, settings.weightKg.value)
             stopRest()
             _elapsed.value = 0
-            if (newPrs.isNotEmpty()) _celebration.value = PrCelebration(newPrs, w.title)
+            if (newPrs.isNotEmpty() && settings.prCelebrate.value) _celebration.value = PrCelebration(newPrs, w.title)
             com.example.work.FitJobs.backupNow(getApplication())
             com.example.work.WidgetUpdater.refresh(getApplication())
             onDone()
@@ -1097,6 +1097,53 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         exercises.value, routines.value, allDays.value, allItems.value,
         workouts.value, allSets.value, prs.value, bodyMetrics.value, notes.value
     )
+
+    /**
+     * Tüm tamamlanmış setler, Excel (Türkçe) için CSV: noktalı virgül ayraç, virgüllü ondalık,
+     * UTF-8 BOM (Türkçe karakterler doğru görünsün).
+     */
+    fun exportCsv(): String {
+        val ws = workouts.value.filter { it.isFinished }.associateBy { it.id }
+        val date = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("tr"))
+        val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr"))
+        fun q(t: String) = "\"" + t.replace("\"", "\"\"") + "\""
+        fun n(f: Float) = if (f <= 0f) "" else f.trimNum().replace('.', ',')
+        val sb = StringBuilder("\uFEFF")
+        sb.append("Tarih;Saat;Antrenman;Hareket;Set;Kg;Tekrar;RPE;Süre (sn);Isınma;Hacim (kg)\n")
+        allSets.value
+            .filter { it.isCompleted && it.workoutId in ws }
+            .sortedWith(compareBy({ ws[it.workoutId]!!.startedAt }, { it.exerciseOrder }, { it.setNumber }))
+            .forEach { st ->
+                val w = ws[st.workoutId]!!
+                sb.append(date.format(java.util.Date(w.startedAt))).append(';')
+                    .append(time.format(java.util.Date(w.startedAt))).append(';')
+                    .append(q(w.title)).append(';')
+                    .append(q(st.exerciseName)).append(';')
+                    .append(st.setNumber).append(';')
+                    .append(n(st.weightKg)).append(';')
+                    .append(if (st.reps > 0) st.reps.toString() else "").append(';')
+                    .append(n(st.rpe)).append(';')
+                    .append(if (st.durationSeconds > 0) st.durationSeconds.toString() else "").append(';')
+                    .append(if (st.isWarmup) "evet" else "").append(';')
+                    .append(if (st.isWarmup) "" else n(st.weightKg * st.reps)).append('\n')
+            }
+        return sb.toString()
+    }
+
+    /** CSV'yi önbelleğe yazıp paylaşım menüsünü açar. */
+    fun shareCsv(context: android.content.Context): Boolean = runCatching {
+        val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+        val f = java.io.File(dir, "FitFlow-antrenmanlar.csv")
+        f.writeText(exportCsv(), Charsets.UTF_8)
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".fileprovider", f)
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/csv"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(android.content.Intent.createChooser(intent, "CSV olarak paylaş").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
 
     /** Yedek JSON metnini veya dosyasını içe aktarır. */
     fun importBackupJson(jsonStr: String, onResult: (ImportResult) -> Unit) {

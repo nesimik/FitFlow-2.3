@@ -37,6 +37,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Fingerprint
+import com.example.ui.theme.findActivity
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
@@ -163,7 +165,8 @@ fun FitFlowApp(vm: AppViewModel) {
     var unlocked by remember { mutableStateOf(false) }
 
     if (lockEnabled && passcode.isNotBlank() && !unlocked) {
-        LockScreen(correct = passcode, onUnlock = { unlocked = true })
+        val bio by vm.settings.biometricOn.collectAsStateWithLifecycle()
+        LockScreen(check = { vm.settings.checkPasscode(it) }, biometric = bio, onUnlock = { unlocked = true })
         return
     }
     AppScaffold(vm)
@@ -874,9 +877,34 @@ private fun PrDialog(c: PrCelebration, onDismiss: () -> Unit) {
 /* -------------------------------- Kilit ekranı ----------------------------- */
 
 @Composable
-private fun LockScreen(correct: String, onUnlock: () -> Unit) {
+private fun LockScreen(check: (String) -> Boolean, biometric: Boolean, onUnlock: () -> Unit) {
     var input by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    val vmCtx = androidx.compose.ui.platform.LocalContext.current
+    val pinLen = remember { com.example.data.SettingsStore(vmCtx).passcodeLength().coerceIn(4, 8) }
+    val activity = remember(vmCtx) { vmCtx.findActivity() as? androidx.fragment.app.FragmentActivity }
+    val canBio = remember(activity) {
+        activity != null && androidx.biometric.BiometricManager.from(activity)
+            .canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+    }
+    fun promptBio() {
+        val act = activity ?: return
+        val prompt = androidx.biometric.BiometricPrompt(
+            act, androidx.core.content.ContextCompat.getMainExecutor(act),
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) { onUnlock() }
+            }
+        )
+        prompt.authenticate(
+            androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                .setTitle("FitFlow kilidi")
+                .setSubtitle("Parmak izinle aç")
+                .setNegativeButtonText("Şifre kullan")
+                .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                .build()
+        )
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (biometric && canBio) promptBio() }
     BackHandler(enabled = true) { }
 
     Box(
@@ -900,7 +928,7 @@ private fun LockScreen(correct: String, onUnlock: () -> Unit) {
             )
             Spacer(Modifier.height(26.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                repeat(4) { i ->
+                repeat(pinLen) { i ->
                     Box(
                         Modifier
                             .size(16.dp)
@@ -913,7 +941,7 @@ private fun LockScreen(correct: String, onUnlock: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(30.dp))
-            val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫")
+            val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", if (biometric && canBio) "BIO" else "", "0", "⌫")
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 keys.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -925,12 +953,14 @@ private fun LockScreen(correct: String, onUnlock: () -> Unit) {
                                     .background(if (key.isBlank()) Color.Transparent else MaterialTheme.fit.elevated)
                                     .clickable(enabled = key.isNotBlank()) {
                                         error = false
-                                        if (key == "⌫") {
+                                        if (key == "BIO") {
+                                            promptBio()
+                                        } else if (key == "⌫") {
                                             if (input.isNotEmpty()) input = input.dropLast(1)
                                         } else if (input.length < 8) {
                                             input += key
-                                            if (input.length >= correct.length) {
-                                                if (input == correct) onUnlock() else {
+                                            if (input.length >= pinLen) {
+                                                if (check(input)) onUnlock() else {
                                                     error = true
                                                     input = ""
                                                 }
@@ -941,6 +971,8 @@ private fun LockScreen(correct: String, onUnlock: () -> Unit) {
                             ) {
                                 if (key == "⌫") {
                                     Icon(Icons.Default.Backspace, null, tint = MaterialTheme.fit.muted)
+                                } else if (key == "BIO") {
+                                    Icon(Icons.Default.Fingerprint, "Parmak izi", tint = MaterialTheme.fit.accent)
                                 } else {
                                     Text(key, style = MaterialTheme.typography.headlineSmall)
                                 }

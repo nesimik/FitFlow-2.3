@@ -30,8 +30,38 @@ data class LoadingProfile(
     val barKg: Float = 20f,
     val barbellStep: Float = 2.5f,
     val dumbbellStep: Float = 2f,
-    val machineStep: Float = 5f
+    val machineStep: Float = 5f,
+    /** Salondaki plakalar (tek plaka ağırlığı). Plaka dizilimi hesabında kullanılır. */
+    val plates: List<Float> = DEFAULT_PLATES,
+    /** Salondaki sabit dambıllar (tek dambıl). Boşsa [dumbbellStep] ızgarası kullanılır. */
+    val dumbbells: List<Float> = emptyList()
 ) {
+    companion object {
+        val DEFAULT_PLATES = listOf(25f, 20f, 15f, 10f, 5f, 2.5f, 1.25f)
+    }
+
+    private fun dbList(kind: LoadKind): List<Float>? =
+        if (kind == LoadKind.DUMBBELL && dumbbells.isNotEmpty()) dumbbells.sorted() else null
+
+    /** Bir üst kurulabilir ağırlık. */
+    fun up(w: Float, kind: LoadKind): Float {
+        dbList(kind)?.let { l -> return l.firstOrNull { it > w + 0.01f } ?: w }
+        return ProgressionEngine.nextUp(w, step(kind))
+    }
+
+    /** Bir alt kurulabilir ağırlık. */
+    fun down(w: Float, kind: LoadKind): Float {
+        dbList(kind)?.let { l -> return l.lastOrNull { it < w - 0.01f } ?: w }
+        return ProgressionEngine.nextDown(w, step(kind))
+    }
+
+    /** En yakın kurulabilir ağırlık. */
+    fun round(w: Float, kind: LoadKind): Float {
+        dbList(kind)?.let { l -> return l.minByOrNull { kotlin.math.abs(it - w) } ?: w }
+        val st = step(kind)
+        return if (st <= 0f) w else Calc.roundToNearest(w, st)
+    }
+
     fun step(kind: LoadKind): Float = when (kind) {
         LoadKind.BARBELL, LoadKind.OTHER -> barbellStep
         LoadKind.DUMBBELL -> dumbbellStep
@@ -285,8 +315,8 @@ object ProgressionEngine {
         if (deload) {
             val dSets = maxOf(1, (setCount + 1) / 2)
             val dWeight = if (bodyweight || step <= 0f) w else {
-                val r = Calc.roundToNearest(w * 0.9f, step)
-                if (r >= w) nextDown(w, step) else r
+                val r = profile.round(w * 0.9f, kind)
+                if (r >= w) profile.down(w, kind) else r
             }
             return build(
                 ProgressAction.DELOAD, dWeight, List(dSets) { lo },
@@ -312,8 +342,8 @@ object ProgressionEngine {
 
         return when {
             allTop && !grinding -> build(
-                ProgressAction.INCREASE, nextUp(w, step), List(setCount) { lo },
-                "Tüm setlerde $hi tekrar tamam. +${(nextUp(w, step) - w).trimNum()} kg, tekrar $lo'a döner."
+                ProgressAction.INCREASE, profile.up(w, kind), List(setCount) { lo },
+                "Tüm setlerde $hi tekrar tamam. +${(profile.up(w, kind) - w).trimNum()} kg, tekrar $lo'a döner."
             )
 
             allTop && grinding -> build(
@@ -329,7 +359,7 @@ object ProgressionEngine {
                     abs(pW - w) < 0.01f && (pw.filter { abs(it.weight - w) < 0.01f }.minOfOrNull { it.reps } ?: hi) < lo
                 }
                 if (missedBefore || topRpe >= 10f) build(
-                    ProgressAction.DECREASE, nextDown(w, step), List(setCount) { lo },
+                    ProgressAction.DECREASE, profile.down(w, kind), List(setCount) { lo },
                     if (missedBefore) "İki seanstır $lo tekrarın altındasın. Bir kademe hafifle, formu oturt, yeniden tırman."
                     else "Tükeniş setine gitmişsin. Bir kademe hafifle, RPE 8 civarında kal."
                 ) else build(
@@ -402,8 +432,8 @@ object ProgressionEngine {
         if (deload) {
             val dSets = maxOf(1, (setCount + 1) / 2)
             val dWeight = if (w <= 0f || step <= 0f) w else {
-                val r = Calc.roundToNearest(w * 0.9f, step)
-                if (r >= w) nextDown(w, step) else r
+                val r = profile.round(w * 0.9f, kind)
+                if (r >= w) profile.down(w, kind) else r
             }
             return build(
                 ProgressAction.DELOAD, dWeight, scheme.targets(0, dSets),
@@ -434,7 +464,7 @@ object ProgressionEngine {
                     "$top tamamlandı — ağırlıklı sisteme geçme zamanı. Programda '${weightedVariant(exerciseName)}' ile değiştir; kemerle +2,5 kg ekleyip ${first.joinToString("-")}'dan başla."
                 )
                 else -> {
-                    val nw = nextUp(w, step)
+                    val nw = profile.up(w, kind)
                     build(
                         ProgressAction.INCREASE, nw, first,
                         "$top merdiveni tamam. +${(nw - w).trimNum()} kg, ${first.joinToString("-")} ile yeniden başla."
@@ -453,7 +483,7 @@ object ProgressionEngine {
             }
             if (missedBefore || topRpe >= 10f) {
                 return build(
-                    ProgressAction.DECREASE, nextDown(w, step), first,
+                    ProgressAction.DECREASE, profile.down(w, kind), first,
                     if (missedBefore) "İki seanstır ilk basamağın altındasın. Bir kademe hafifle, ${first.joinToString("-")} ile yeniden tırman."
                     else "Tükeniş setine gitmişsin. Bir kademe hafifle, ${first.joinToString("-")} ile devam."
                 )

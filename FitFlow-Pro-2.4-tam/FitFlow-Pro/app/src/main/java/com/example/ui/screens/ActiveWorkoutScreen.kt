@@ -128,7 +128,13 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     val barStep by vm.settings.increment.collectAsStateWithLifecycle()
     val dbStep by vm.settings.dumbbellStep.collectAsStateWithLifecycle()
     val machineStep by vm.settings.machineStep.collectAsStateWithLifecycle()
-    val profile = remember(bar, barStep, dbStep, machineStep) { LoadingProfile(bar, barStep, dbStep, machineStep) }
+    val gymPlates by vm.settings.plates.collectAsStateWithLifecycle()
+    val gymDumbbells by vm.settings.dumbbells.collectAsStateWithLifecycle()
+    val showRpe by vm.settings.rpeOn.collectAsStateWithLifecycle()
+    val showWarmup by vm.settings.warmupOn.collectAsStateWithLifecycle()
+    val profile = remember(bar, barStep, dbStep, machineStep, gymPlates, gymDumbbells) {
+        LoadingProfile(bar, barStep, dbStep, machineStep, gymPlates, gymDumbbells)
+    }
     val effort by vm.sessionEffort.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -205,6 +211,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                 item(key = "effort") { EffortBanner(ef, workout!!.isDeload) }
             }
             itemsIndexed(exercises, key = { _, e -> "${e.exerciseId}_${e.order}" }) { index, se ->
+                androidx.compose.runtime.CompositionLocalProvider(LocalShowRpe provides showRpe, LocalShowWarmup provides showWarmup) {
                 ExerciseLogCard(
                     se = se,
                     number = index + 1,
@@ -238,6 +245,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                         }
                     }
                 )
+                }
             }
 
             item {
@@ -502,6 +510,10 @@ private fun SessionTopBar(
 
 /* ---------------------------- Hareket kayıt kartı --------------------------- */
 
+/** Ayarlardan: RPE sütunu ve ısınma önerisi görünsün mü. */
+private val LocalShowRpe = androidx.compose.runtime.staticCompositionLocalOf { true }
+private val LocalShowWarmup = androidx.compose.runtime.staticCompositionLocalOf { true }
+
 @Composable
 private fun ExerciseLogCard(
     se: SessionExercise,
@@ -745,11 +757,11 @@ private fun ExerciseLogCard(
         val rampEligible = !se.isWarmup && !isDuration && !isRepsOnly && !se.isDone && se.completedSets == 0 &&
             scheme != null && scheme != com.example.core.RepScheme.ISOLATION &&
             (kind == LoadKind.BARBELL || firstOfMuscle)
-        if (rampEligible) {
+        if (rampEligible && LocalShowWarmup.current) {
             val ramp = com.example.core.TrainingBlock.warmupRamp(workWeight, kind, profile)
             if (ramp.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                WarmupRamp(ramp, workWeight, if (kind == LoadKind.BARBELL) profile.barKg else null)
+                WarmupRamp(ramp, workWeight, if (kind == LoadKind.BARBELL) profile.barKg else null, profile.plates)
             }
         }
 
@@ -765,7 +777,7 @@ private fun ExerciseLogCard(
                 if (!isRepsOnly) HeaderCell("KG", Modifier.weight(1f))
                 HeaderCell("TEKRAR", Modifier.weight(1f))
             }
-            HeaderCell("RPE", Modifier.weight(0.8f))
+            if (LocalShowRpe.current) HeaderCell("RPE", Modifier.weight(0.8f))
             Spacer(Modifier.width(48.dp))
         }
         Spacer(Modifier.height(2.dp))
@@ -875,8 +887,8 @@ private fun PrescriptionPanel(rx: Prescription) {
 }
 
 @Composable
-private fun WarmupRamp(ramp: List<Pair<Float, Int>>, workWeight: Float, barKg: Float?) {
-    val plates = if (barKg != null) Calc.plates(workWeight, barKg) else emptyList()
+private fun WarmupRamp(ramp: List<Pair<Float, Int>>, workWeight: Float, barKg: Float?, available: List<Float>) {
+    val plates = if (barKg != null) Calc.plates(workWeight, barKg, available) else emptyList()
     Column(
         Modifier
             .fillMaxWidth()
@@ -1078,7 +1090,7 @@ private fun SetRow(
             if (!isRepsOnly) ValueCell(if (set.weightKg > 0f) set.weightKg.trimNum() else "—", Modifier.weight(1f), onEdit)
             ValueCell(if (set.reps > 0) "${set.reps}" else "—", Modifier.weight(1f), onEdit)
         }
-        ValueCell(
+        if (LocalShowRpe.current) ValueCell(
             if (set.rpe > 0f) set.rpe.trimNum() else "–",
             Modifier.weight(0.8f),
             onEdit,
@@ -1222,7 +1234,7 @@ private fun SetEditorSheet(
                         plusLabel = "+${step.trimNum()}"
                     )
                     if (kind == LoadKind.BARBELL && weight > profile.barKg) {
-                        val plates = Calc.plates(weight, profile.barKg)
+                        val plates = Calc.plates(weight, profile.barKg, profile.plates)
                         val achievable = profile.barKg + plates.sum() * 2f
                         Text(
                             "Taraf başına: " + plates.joinToString(" + ") { it.trimNum() } +

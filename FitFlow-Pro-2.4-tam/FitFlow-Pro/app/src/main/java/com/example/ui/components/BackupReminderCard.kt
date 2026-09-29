@@ -35,7 +35,7 @@ import java.util.Locale
 
 /** Ayarlar: otomatik yedek klasörü, antrenman hatırlatıcısı ve haftalık rapor. */
 @Composable
-fun BackupAndReminderCard(vm: AppViewModel) {
+fun BackupAndReminderCard(vm: AppViewModel, sections: Set<String> = setOf("backup", "notify", "health")) {
     val s = vm.settings
     val context = LocalContext.current
     val folder by s.backupFolder.collectAsStateWithLifecycle()
@@ -75,6 +75,7 @@ fun BackupAndReminderCard(vm: AppViewModel) {
     }
 
     FitCard {
+        if ("backup" in sections) {
         OverlineText("Otomatik yedek")
         Spacer(Modifier.height(6.dp))
         if (folder.isBlank()) {
@@ -106,7 +107,9 @@ fun BackupAndReminderCard(vm: AppViewModel) {
             GhostButton("Otomatik yedeği kapat", { s.setBackupFolder(""); s.setBackupError("") }, Modifier.fillMaxWidth())
         }
 
-        Spacer(Modifier.height(16.dp))
+        }
+        if ("notify" in sections) {
+        if (sections.size > 1 && "backup" in sections) Spacer(Modifier.height(16.dp))
         OverlineText("Bildirimler")
         Spacer(Modifier.height(6.dp))
         LabeledSwitch(
@@ -134,7 +137,9 @@ fun BackupAndReminderCard(vm: AppViewModel) {
             reportOn
         ) { s.setWeeklyReportOn(it) }
 
-        Spacer(Modifier.height(16.dp))
+        }
+        if ("health" in sections) {
+        if (sections.size > 1) Spacer(Modifier.height(16.dp))
         OverlineText("Health Connect")
         Spacer(Modifier.height(6.dp))
         if (!healthAvailable) {
@@ -161,6 +166,7 @@ fun BackupAndReminderCard(vm: AppViewModel) {
             if (healthMsg.isNotBlank()) {
                 Text(healthMsg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
             }
+        }
         }
     }
 }
