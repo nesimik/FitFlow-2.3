@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.text.font.FontWeight
@@ -244,7 +245,9 @@ private fun ExerciseRow(
     score: Float?,
     highlight: List<String>?,
     onClick: () -> Unit,
-    onFavorite: () -> Unit
+    onFavorite: () -> Unit,
+    /** Seçim modunda: null = seçim yok; 0 = seçili değil; n = n. sırada seçili. */
+    selectionIndex: Int? = null
 ) {
     val accent = MaterialTheme.fit.accent
     val activation = remember(ex.id, ex.name) { MuscleMap.resolve(ex.name, ex.muscleGroup, ex.secondaryMuscles) }
@@ -313,6 +316,17 @@ private fun ExerciseRow(
             if (ex.isFavorite) {
                 Spacer(Modifier.width(6.dp))
                 Icon(Icons.Default.Star, null, tint = MaterialTheme.fit.gold, modifier = Modifier.size(16.dp).clickable { onFavorite() })
+            }
+            if (selectionIndex != null) {
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    Modifier.size(28.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (selectionIndex > 0) accent else Color.Transparent)
+                        .border(1.5.dp, if (selectionIndex > 0) accent else MaterialTheme.fit.muted, androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (selectionIndex > 0) Text("$selectionIndex", style = MaterialTheme.typography.labelLarge.mono(), color = MaterialTheme.fit.onAccent)
+                }
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
@@ -734,6 +748,163 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
             destructive = true,
             onConfirm = { vm.deleteExercise(ex); showDelete = false; nav.popBackStack() },
             onDismiss = { showDelete = false }
+        )
+    }
+}
+
+
+/* ==========================================================================
+ * Hareket seçici (2.19): Hareketler sekmesiyle aynı görünüm — kas haritalı satırlar,
+ * kas adıyla arama ("kalça", "arka bacak"), Programımda / Favori / kas grubu filtreleri.
+ * Tek seçim: satıra dokununca seçilir. Çoklu (süperset): sıra numarasıyla işaretlenir.
+ * ========================================================================== */
+@Composable
+fun ExerciseBrowserDialog(
+    vm: AppViewModel,
+    title: String,
+    multi: Boolean = false,
+    excludeIds: Set<Long> = emptySet(),
+    onPick: (ExerciseEntity) -> Unit = {},
+    onPickMany: (List<ExerciseEntity>) -> Unit = {},
+    onDismiss: () -> Unit
+) {
+    val all by vm.exercises.collectAsStateWithLifecycle()
+    val allSets by vm.allSets.collectAsStateWithLifecycle()
+    val days by vm.routineDays.collectAsStateWithLifecycle()
+    val allItems by vm.allItems.collectAsStateWithLifecycle()
+
+    var query by remember { mutableStateOf("") }
+    var group by remember { mutableStateOf("Hepsi") }
+    var onlyFavorites by remember { mutableStateOf(false) }
+    var onlyProgram by remember { mutableStateOf(false) }
+    var showCreate by remember { mutableStateOf(false) }
+    val selected = remember { androidx.compose.runtime.mutableStateListOf<ExerciseEntity>() }
+
+    val programIds = remember(days, allItems) {
+        val ids = days.map { it.id }.toSet()
+        allItems.filter { it.dayId in ids }.map { it.exerciseId }.toSet()
+    }
+    val stats = remember(allSets) { libraryStats(allSets) }
+    val muscleKeys = remember(query) { com.example.core.MuscleSearch.muscles(query) }
+    val searching = query.isNotBlank()
+
+    val results: List<Pair<ExerciseEntity, Float?>> = remember(all, query, group, onlyFavorites, onlyProgram, programIds, muscleKeys, excludeIds) {
+        val base = all.asSequence()
+            .filter { it.id !in excludeIds }
+            .filter { group == "Hepsi" || it.muscleGroup == group }
+            .filter { !onlyFavorites || it.isFavorite }
+            .filter { searching || !onlyProgram || it.id in programIds }
+            .toList()
+        if (muscleKeys != null) {
+            val scored = base.map { it to com.example.core.MuscleSearch.score(it.name, it.muscleGroup, it.secondaryMuscles, muscleKeys) }
+                .filter { it.second >= com.example.core.MuscleSearch.MIN_SCORE }
+                .sortedWith(compareByDescending<Pair<ExerciseEntity, Float>> { it.second }.thenBy { it.first.name })
+            val q = com.example.core.MuscleSearch.fold(query)
+            val byName = base.filter { e -> scored.none { it.first.id == e.id } && com.example.core.MuscleSearch.fold(e.name).contains(q) }
+            scored.map { it.first to it.second as Float? } + byName.map { it to null }
+        } else {
+            val q = com.example.core.MuscleSearch.fold(query)
+            base.filter { q.isBlank() || com.example.core.MuscleSearch.fold(it.name).contains(q) }
+                .sortedWith(compareByDescending<ExerciseEntity> { it.isFavorite }
+                    .thenByDescending { stats.containsKey(it.id) }
+                    .thenBy { it.name })
+                .map { it to null }
+        }
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+        ) {
+            ScreenHeader(
+                title = title,
+                subtitle = if (multi) "Sırayla seç · en az 2 hareket" else "${results.size} hareket",
+                onBack = onDismiss
+            ) {
+                RoundIconButton(Icons.Default.Add, MaterialTheme.colorScheme.onSurface, 40.dp, MaterialTheme.fit.elevated) { showCreate = true }
+            }
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                SearchField(query, { query = it }, "Hareket veya kas: kalça, arka bacak…")
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    if (programIds.isNotEmpty()) {
+                        com.example.ui.components.ChoiceChip("Programımda", onlyProgram && !searching, { onlyProgram = !onlyProgram })
+                    }
+                    com.example.ui.components.ChoiceChip("★ Favori", onlyFavorites, { onlyFavorites = !onlyFavorites }, color = MaterialTheme.fit.gold)
+                    (listOf("Hepsi") + Muscles.all).forEach {
+                        com.example.ui.components.ChoiceChip(if (it == "Hepsi") "Tümü" else it, group == it, { group = it })
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (multi && selected.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    selected.forEachIndexed { i, e ->
+                        Badge("${i + 1}. ${e.name}", MaterialTheme.fit.accent)
+                    }
+                }
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(start = 20.dp, end = 16.dp, bottom = 24.dp)
+            ) {
+                if (muscleKeys != null) {
+                    item {
+                        Text(
+                            "${com.example.core.MuscleSearch.label(muscleKeys)} için hareketler · en çok çalıştırandan başlayarak",
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                }
+                if (results.isEmpty()) {
+                    item {
+                        Text("Hareket bulunamadı. Sağ üstteki + ile kendi hareketini oluşturabilirsin.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted, modifier = Modifier.padding(vertical = 20.dp))
+                    }
+                }
+                items(results, key = { it.first.id }) { (ex, score) ->
+                    val idx = selected.indexOfFirst { it.id == ex.id }
+                    ExerciseRow(
+                        ex = ex,
+                        stat = stats[ex.id],
+                        score = score,
+                        highlight = muscleKeys,
+                        onClick = {
+                            if (multi) { if (idx >= 0) selected.removeAt(idx) else selected.add(ex) }
+                            else onPick(ex)
+                        },
+                        onFavorite = { vm.toggleFavorite(ex) },
+                        selectionIndex = if (multi) idx + 1 else null
+                    )
+                }
+            }
+            if (multi) {
+                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().padding(16.dp)) {
+                    com.example.ui.components.AccentButton(
+                        if (selected.size >= 2) "Süperset oluştur (${selected.size})" else "En az 2 hareket seç",
+                        { onPickMany(selected.toList()) },
+                        Modifier.fillMaxWidth(),
+                        Icons.Default.Add,
+                        enabled = selected.size >= 2
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCreate) {
+        ExerciseEditorDialog(
+            initial = null,
+            onSave = { vm.saveExercise(it); showCreate = false; query = it.name },
+            onDismiss = { showCreate = false }
         )
     }
 }

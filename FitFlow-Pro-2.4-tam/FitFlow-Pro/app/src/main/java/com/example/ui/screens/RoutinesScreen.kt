@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
@@ -188,27 +189,43 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
         allItems.filter { it.dayId in ids && !it.isWarmup }.map { it.exerciseId }.distinct().size
     }
     var headerMenu by remember { mutableStateOf(false) }
+    var renameRoutine by remember { mutableStateOf<com.example.data.RoutineEntity?>(null) }
+    var deleteRoutine by remember { mutableStateOf<com.example.data.RoutineEntity?>(null) }
     var routineMenu by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
-            title = "Program",
+            title = active?.name ?: "Program",
             subtitle = if (days.isEmpty()) "Antrenman planını yönet"
             else "Haftada ${days.count { it.weekday in 1..7 }.takeIf { it > 0 } ?: days.size} gün · $programExerciseCount hareket",
             onBack = if (nav.previousBackStackEntry != null) { { nav.popBackStack() } } else null
         ) {
+            RoundIconButton(Icons.Default.Add, MaterialTheme.fit.accent, 40.dp) { showAddRoutine = true }
+            Spacer(Modifier.width(8.dp))
             Box {
                 RoundIconButton(Icons.Default.MoreVert, MaterialTheme.fit.muted, 40.dp, MaterialTheme.fit.elevated) { headerMenu = true }
                 DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
+                    if (routines.size > 1) {
+                        Text("PROGRAMLAR", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        routines.forEach { r ->
+                            DropdownMenuItem(
+                                text = { Text(r.name, color = if (r.id == active?.id) MaterialTheme.fit.accent else MaterialTheme.colorScheme.onSurface) },
+                                onClick = { headerMenu = false; vm.selectRoutine(r.id) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (r.id == active?.id) Icons.Default.CheckCircle else Icons.Default.CalendarMonth, null,
+                                        tint = if (r.id == active?.id) MaterialTheme.fit.accent else MaterialTheme.fit.muted
+                                    )
+                                }
+                            )
+                        }
+                        androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    }
                     DropdownMenuItem(
                         text = { Text("Gün ekle") },
                         onClick = { headerMenu = false; showAddDay = true },
                         leadingIcon = { Icon(Icons.Default.Add, null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Yeni program") },
-                        onClick = { headerMenu = false; showAddRoutine = true },
-                        leadingIcon = { Icon(Icons.Default.CalendarMonth, null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Program kas haritası") },
@@ -226,6 +243,17 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                             onClick = { headerMenu = false; showBlockDialog = true },
                             leadingIcon = { Icon(Icons.Default.History, null) }
                         )
+                        androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = { Text("Programı yeniden adlandır") },
+                            onClick = { headerMenu = false; renameRoutine = active },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Programı sil", color = MaterialTheme.fit.danger) },
+                            onClick = { headerMenu = false; deleteRoutine = active },
+                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.fit.danger) }
+                        )
                     }
                 }
             }
@@ -240,45 +268,6 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                     BlockStatusCard(deloadRecommendation, onClick = { showBlockDialog = true })
                 }
             }
-            item {
-                Box {
-                    FitCard(
-                        onClick = { routineMenu = true },
-                        corner = 20.dp,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                OverlineText("Aktif program")
-                                Spacer(Modifier.height(3.dp))
-                                Text(
-                                    (active?.name ?: "Program seç") +
-                                        if (days.isNotEmpty()) " · ${days.count { it.weekday in 1..7 }.takeIf { it > 0 } ?: days.size} gün" else "",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Icon(Icons.Default.ExpandMore, null, tint = MaterialTheme.fit.muted, modifier = Modifier.size(22.dp))
-                        }
-                    }
-                    DropdownMenu(expanded = routineMenu, onDismissRequest = { routineMenu = false }) {
-                        routines.forEach { r ->
-                            DropdownMenuItem(
-                                text = { Text(r.name + if (r.id == active?.id) "  ✓" else "") },
-                                onClick = { routineMenu = false; vm.selectRoutine(r.id) }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Yeni program", color = MaterialTheme.fit.accent) },
-                            onClick = { routineMenu = false; showAddRoutine = true },
-                            leadingIcon = { Icon(Icons.Default.Add, null, tint = MaterialTheme.fit.accent) }
-                        )
-                    }
-                }
-            }
-
             if (days.isNotEmpty()) {
                 item { WeekPlanStrip(days) }
                 item {
@@ -351,6 +340,38 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                 showAddDay = false
             },
             onDismiss = { showAddDay = false }
+        )
+    }
+
+    renameRoutine?.let { r ->
+        var t by remember(r.id) { mutableStateOf(r.name) }
+        AlertDialog(
+            onDismissRequest = { renameRoutine = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Program adı", style = MaterialTheme.typography.titleLarge) },
+            text = { FitTextField(t, { t = it }, "Ad") },
+            confirmButton = {
+                TextButton(onClick = { if (t.isNotBlank()) vm.updateRoutine(r.copy(name = t.trim())); renameRoutine = null }) {
+                    Text("Kaydet", color = MaterialTheme.fit.accent)
+                }
+            },
+            dismissButton = { TextButton(onClick = { renameRoutine = null }) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
+        )
+    }
+
+    deleteRoutine?.let { r ->
+        ConfirmDialog(
+            title = "Programı sil",
+            text = "\"${r.name}\" programı, günleri ve hareket ayarlarıyla silinecek. Antrenman geçmişin etkilenmez.",
+            confirmLabel = "Sil",
+            destructive = true,
+            onConfirm = {
+                val next = routines.firstOrNull { it.id != r.id }
+                vm.deleteRoutine(r)
+                if (next != null) vm.selectRoutine(next.id)
+                deleteRoutine = null
+            },
+            onDismiss = { deleteRoutine = null }
         )
     }
 
