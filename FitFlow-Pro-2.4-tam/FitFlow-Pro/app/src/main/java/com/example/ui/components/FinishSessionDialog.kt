@@ -44,12 +44,12 @@ fun FinishSessionDialog(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.fit.muted
                     )
-                    AccentButton("Evet, sil ve çık", onDiscard, Modifier.fillMaxWidth(), Icons.Default.DeleteOutline, MaterialTheme.fit.danger)
+                    AccentButton("Evet, sil ve çık", onDiscard, Modifier.fillMaxWidth(), Icons.Default.DeleteOutline, color = MaterialTheme.fit.danger)
                 } else {
                     Text(title, style = MaterialTheme.typography.titleSmall)
                     if (summary != null) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
-                    AccentButton("Kaydet ve bitir", onSave, Modifier.fillMaxWidth(), Icons.Default.CheckCircle, MaterialTheme.fit.success)
-                    GhostButton("Kaydetmeden çık", { confirmDiscard = true }, Modifier.fillMaxWidth(), Icons.Default.DeleteOutline, MaterialTheme.fit.danger)
+                    AccentButton("Kaydet ve bitir", onSave, Modifier.fillMaxWidth(), Icons.Default.CheckCircle, color = MaterialTheme.fit.success)
+                    GhostButton("Kaydetmeden çık", { confirmDiscard = true }, Modifier.fillMaxWidth(), Icons.Default.DeleteOutline, color = MaterialTheme.fit.danger)
                 }
             }
         },
