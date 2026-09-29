@@ -220,6 +220,25 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         }
     }
 
+    /** Hareketi başka bir güne (sonuna) taşır. */
+    suspend fun moveItemToDay(item: RoutineItemEntity, dayId: Long) {
+        if (item.dayId == dayId) return
+        val last = dao.itemsForDay(dayId).maxOfOrNull { it.orderIndex } ?: -1
+        dao.updateItem(item.copy(dayId = dayId, orderIndex = last + 1, supersetGroup = 0))
+        normalizeItemOrders(item.dayId)
+        normalizeItemOrders(dayId)
+    }
+
+    /** Hareketi gün içinde belirli sıraya taşır. */
+    suspend fun moveItemTo(dayId: Long, itemId: Long, index: Int) {
+        val items = dao.itemsForDay(dayId).sortedBy { it.orderIndex }.toMutableList()
+        val idx = items.indexOfFirst { it.id == itemId }
+        if (idx < 0) return
+        val it = items.removeAt(idx)
+        items.add(index.coerceIn(0, items.size), it)
+        items.forEachIndexed { i, e -> if (e.orderIndex != i) dao.updateItem(e.copy(orderIndex = i)) }
+    }
+
     suspend fun moveItem(dayId: Long, itemId: Long, up: Boolean) {
         val items = dao.itemsForDay(dayId)
             .sortedBy { it.orderIndex }

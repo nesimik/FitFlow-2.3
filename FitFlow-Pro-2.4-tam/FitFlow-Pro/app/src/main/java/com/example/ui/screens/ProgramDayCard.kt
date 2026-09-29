@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -197,22 +199,16 @@ fun ProgramDayCard(
             Icon(Icons.Default.ExpandMore, null, tint = MaterialTheme.fit.muted, modifier = Modifier.rotate(chevron))
         }
 
-        /* Açık seans şeridi */
+        /* Açık seans şeridi (2.26: daha belirgin) */
         if (isActiveDay && running != null) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp).clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.fit.success.copy(alpha = 0.10f)).padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Seans açık", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.success)
-                    Text("${formatDuration(sessionElapsed)} · $sessionDone/$sessionTotal set", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.muted)
-                }
-                RoundIconButton(Icons.Default.Stop, MaterialTheme.fit.danger, 38.dp) { showFinish = true }
-                RoundIconButton(Icons.Default.PlayArrow, MaterialTheme.fit.success, 38.dp) { nav.navigate("${Routes.WORKOUT}/${running.id}") }
-            }
-            Spacer(Modifier.height(4.dp))
+            ActiveSessionStrip(
+                elapsed = formatDuration(sessionElapsed),
+                done = sessionDone,
+                total = sessionTotal,
+                onResume = { nav.navigate("${Routes.WORKOUT}/${running.id}") },
+                onFinish = { showFinish = true }
+            )
+            Spacer(Modifier.height(8.dp))
         }
 
         /* Hareket listesi */
@@ -661,5 +657,65 @@ private fun NumberField(label: String, value: String, onChange: (String) -> Unit
                 cursorColor = MaterialTheme.fit.accent
             )
         )
+    }
+}
+
+
+/** Program gün kartında açık seans şeridi: nabız noktası, süre, ilerleme, Devam et / Bitir. */
+@Composable
+private fun ActiveSessionStrip(elapsed: String, done: Int, total: Int, onResume: () -> Unit, onFinish: () -> Unit) {
+    val green = MaterialTheme.fit.success
+    val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 0.35f, targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(900), androidx.compose.animation.core.RepeatMode.Reverse
+        ), label = "dot"
+    )
+    val progress = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(18.dp))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(green.copy(alpha = 0.26f), green.copy(alpha = 0.08f))))
+            .border(1.5.dp, green.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(green.copy(alpha = pulse)))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "SEANS DEVAM EDİYOR",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
+                color = green, modifier = Modifier.weight(1f)
+            )
+            Text(elapsed, style = MaterialTheme.typography.titleLarge.mono().copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(green.copy(alpha = 0.18f))) {
+                Box(Modifier.fillMaxWidth(progress).height(8.dp).clip(RoundedCornerShape(4.dp)).background(green))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text("$done/$total set", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.muted)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(13.dp)).background(green).clickable { onResume() },
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Devam et", style = MaterialTheme.typography.labelLarge, color = Color.White)
+            }
+            Row(
+                Modifier.height(44.dp).clip(RoundedCornerShape(13.dp))
+                    .border(1.dp, MaterialTheme.fit.danger.copy(alpha = 0.6f), RoundedCornerShape(13.dp))
+                    .clickable { onFinish() }.padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Stop, null, tint = MaterialTheme.fit.danger, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Bitir", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.danger)
+            }
+        }
     }
 }

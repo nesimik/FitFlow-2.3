@@ -955,6 +955,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateItem(i: RoutineItemEntity) = viewModelScope.launch { repo.updateItem(i) }
     fun addItemWithSets(dayId: Long, exerciseId: Long, sets: Int) = viewModelScope.launch { repo.addItemWithSets(dayId, exerciseId, sets) }
 
+    /** Akıllı öneri seçeneğini programa uygular (toplu işlemler sırayla, tek coroutine'de). */
+    fun applyAdvice(a: com.example.core.AdviceAction) = viewModelScope.launch { applyAdviceNow(a) }
+
+    private suspend fun applyAdviceNow(a: com.example.core.AdviceAction) {
+        fun cur(i: RoutineItemEntity) = allItems.value.firstOrNull { it.id == i.id } ?: i
+        when (a) {
+            is com.example.core.AdviceAction.SetSets -> repo.updateItem(cur(a.item).copy(targetSets = a.newSets.coerceIn(1, 10)))
+            is com.example.core.AdviceAction.AddExercise -> repo.addItemWithSets(a.dayId, a.exercise.id, a.sets)
+            is com.example.core.AdviceAction.Swap -> {
+                settings.setLadderConfig(a.item.id, null)
+                repo.updateItem(cur(a.item).copy(exerciseId = a.exercise.id, customName = "", targetWeight = 0f,
+                    targetSets = a.sets, restSeconds = a.exercise.defaultRestSeconds))
+            }
+            is com.example.core.AdviceAction.Remove -> repo.deleteItem(cur(a.item))
+            is com.example.core.AdviceAction.MoveToDay -> repo.moveItemToDay(cur(a.item), a.dayId)
+            is com.example.core.AdviceAction.MoveTo -> repo.moveItemTo(a.item.dayId, a.item.id, a.index)
+            is com.example.core.AdviceAction.SetRest -> repo.updateItem(cur(a.item).copy(restSeconds = a.seconds))
+            is com.example.core.AdviceAction.Batch -> a.actions.forEach { applyAdviceNow(it) }
+        }
+    }
+
     /* ---------------------- Program hareketi paneli yardımcıları ---------------------- */
 
     /** Seans ekranı açılınca bitiş penceresini hemen göster (program / ana ekrandan "Kaydet ve bitir"). */

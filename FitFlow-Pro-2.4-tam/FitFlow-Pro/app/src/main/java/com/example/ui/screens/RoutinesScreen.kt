@@ -275,7 +275,8 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                         days = days,
                         allItems = allItems,
                         exerciseMap = exerciseMap,
-                        onOpen = { showProgramMuscleMap = true }
+                        onOpen = { showProgramMuscleMap = true },
+                        onAdvice = { showWeakLinkAdvisor = true }
                     )
                 }
             }
@@ -461,8 +462,12 @@ private fun ProgramCoverageCard(
     days: List<RoutineDayEntity>,
     allItems: List<RoutineItemEntity>,
     exerciseMap: Map<Long, com.example.data.ExerciseEntity>,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onAdvice: () -> Unit
 ) {
+    val review = remember(days, allItems, exerciseMap) {
+        com.example.core.ProgramAdvisor.review(days, allItems, exerciseMap.values.toList())
+    }
     val loads = remember(days, allItems, exerciseMap) {
         val ids = days.map { it.id }.toSet()
         val acc = HashMap<String, Float>()
@@ -528,6 +533,47 @@ private fun ProgramCoverageCard(
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF6B7483)
         )
+        if (allItems.any { it.dayId in days.map { d -> d.id } }) {
+            Spacer(Modifier.height(12.dp))
+            AdvisorStrip(review.score, review.advice.size, review.highCount, onAdvice)
+        }
+    }
+}
+
+/** Kapsam kartının altında: program puanı ve öneri sayısı → Akıllı öneriler. */
+@Composable
+internal fun AdvisorStrip(score: Int, count: Int, high: Int, onClick: () -> Unit) {
+    val accent = MaterialTheme.fit.accent
+    val scoreColor = when {
+        score >= 80 -> MaterialTheme.fit.success
+        score >= 60 -> accent
+        score >= 45 -> MaterialTheme.fit.warning
+        else -> MaterialTheme.fit.danger
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(accent.copy(alpha = 0.08f))
+            .border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
+            .clickable { onClick() }.padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(scoreColor.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) { Text("$score", style = MaterialTheme.typography.labelLarge.mono().copy(fontWeight = FontWeight.SemiBold), color = scoreColor) }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Akıllı öneriler", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                when {
+                    count == 0 -> "Program dengeli görünüyor"
+                    high > 0 -> "$count öneri · $high yüksek öncelikli"
+                    else -> "$count öneri"
+                },
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted
+            )
+        }
+        Icon(Icons.Default.AutoAwesome, null, tint = accent, modifier = Modifier.size(18.dp))
     }
 }
 

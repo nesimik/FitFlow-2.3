@@ -32,6 +32,10 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -65,7 +69,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.Advice
-import com.example.core.AdviceAction
+import com.example.core.AdviceOption
+import com.example.core.MuscleMap
 import com.example.core.AdviceKind
 import com.example.core.AdviceSeverity
 import com.example.core.BalanceRatio
@@ -88,7 +93,7 @@ import kotlin.math.ln
  * ========================================================================== */
 
 @Composable
-fun ProgramAdvisorScreen(vm: AppViewModel, onDismiss: () -> Unit) {
+fun ProgramAdvisorScreen(vm: AppViewModel, onDismiss: () -> Unit, focusMuscle: String? = null) {
     val context = LocalContext.current
     val routine by vm.activeRoutine.collectAsStateWithLifecycle()
     val days by vm.routineDays.collectAsStateWithLifecycle()
@@ -102,24 +107,15 @@ fun ProgramAdvisorScreen(vm: AppViewModel, onDismiss: () -> Unit) {
     }
     val hidden = remember { mutableStateListOf<String>() }
     var showAll by remember { mutableStateOf(false) }
-    val visible = review.advice.filter { it.id !in hidden }
+    var focus by remember { mutableStateOf(focusMuscle) }
+    val focusList = focus?.let { f -> review.advice.filter { it.muscleKey == f && it.id !in hidden } }.orEmpty()
+    val visible = if (focus != null && focusList.isNotEmpty()) focusList else review.advice.filter { it.id !in hidden }
     val shown = if (showAll) visible else visible.take(4)
     val hasProgram = routine != null && allItems.any { it.dayId in days.map { d -> d.id } }
 
-    fun apply(a: Advice) {
-        when (val act = a.action) {
-            is AdviceAction.SetSets -> {
-                val cur = allItems.firstOrNull { it.id == act.item.id } ?: act.item
-                vm.updateItem(cur.copy(targetSets = act.newSets))
-                Toast.makeText(context, "Set sayısı ${act.newSets} olarak güncellendi", Toast.LENGTH_SHORT).show()
-            }
-            is AdviceAction.AddExercise -> {
-                vm.addItemWithSets(act.dayId, act.exercise.id, act.sets)
-                val dn = days.firstOrNull { it.id == act.dayId }?.name ?: ""
-                Toast.makeText(context, "${act.exercise.name} · $dn gününe eklendi", Toast.LENGTH_SHORT).show()
-            }
-            null -> {}
-        }
+    fun apply(a: Advice, o: AdviceOption) {
+        vm.applyAdvice(o.action)
+        Toast.makeText(context, "Uygulandı: ${o.label}", Toast.LENGTH_SHORT).show()
         hidden += a.id
     }
 
@@ -140,9 +136,26 @@ fun ProgramAdvisorScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item(key = "score") { ScoreCard(review, visible.size) }
+                item(key = "score") { ScoreCard(review) }
                 item(key = "balance") { BalanceCard(review.balances) }
 
+                if (focus != null) {
+                    item(key = "focus") {
+                        Row(
+                            Modifier.clip(RoundedCornerShape(20.dp)).background(MaterialTheme.fit.accent.copy(alpha = 0.12f))
+                                .clickable { focus = null }.padding(start = 12.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (focusList.isEmpty()) "${MuscleMap.label(focus!!)} için öneri yok · tümü gösteriliyor"
+                                else "Yalnızca ${MuscleMap.label(focus!!)}",
+                                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.accent
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.Close, "Filtreyi kaldır", tint = MaterialTheme.fit.accent, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
                 item(key = "head") {
                     Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         OverlineText("Öneriler · öncelik sırasıyla", modifier = Modifier.weight(1f))
@@ -177,7 +190,7 @@ fun ProgramAdvisorScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                 }
 
                 items(shown, key = { it.id }) { a ->
-                    AdviceCard(a, onApply = { apply(a) }, onHide = { hidden += a.id })
+                    AdviceCard(a, onApply = { o -> apply(a, o) }, onHide = { hidden += a.id })
                 }
 
                 if (visible.size > 4) {
@@ -222,7 +235,7 @@ private fun scoreColor(score: Int): Color = when {
 }
 
 @Composable
-private fun ScoreCard(r: ProgramReview, adviceCount: Int) {
+private fun ScoreCard(r: ProgramReview) {
     val color = scoreColor(r.score)
     val anim by animateFloatAsState(r.score / 100f, tween(700), label = "score")
     val track = MaterialTheme.fit.elevated
@@ -252,7 +265,7 @@ private fun ScoreCard(r: ProgramReview, adviceCount: Int) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MiniStat("${r.inRange}/${r.totalMuscles}", "kas hedefte", Modifier.weight(1f))
             MiniStat("${r.weeklySets}", "set / hafta", Modifier.weight(1f))
-            MiniStat("$adviceCount", "öneri", Modifier.weight(1f))
+            MiniStat(if (r.avgMinutes > 0) "~${r.avgMinutes}" else "—", "dk / seans", Modifier.weight(1f))
         }
     }
 }
@@ -330,16 +343,18 @@ private fun BalanceRow(b: BalanceRatio) {
 /* ------------------------------ Öneri kartı ------------------------------ */
 
 private fun AdviceKind.icon(): ImageVector = when (this) {
-    AdviceKind.ADD_SETS -> Icons.Default.Add
-    AdviceKind.ADD_EXERCISE -> Icons.Default.FitnessCenter
+    AdviceKind.DEFICIT -> Icons.Default.Add
     AdviceKind.REDUCE -> Icons.Default.Remove
+    AdviceKind.REDUNDANT -> Icons.Default.ContentCopy
     AdviceKind.BALANCE -> Icons.Default.Balance
+    AdviceKind.ORDER -> Icons.Default.SwapVert
+    AdviceKind.REST -> Icons.Default.HourglassBottom
     AdviceKind.FREQUENCY -> Icons.Default.CalendarMonth
     AdviceKind.DAY_LOAD -> Icons.Default.Timer
 }
 
 @Composable
-private fun AdviceCard(a: Advice, onApply: () -> Unit, onHide: () -> Unit) {
+private fun AdviceCard(a: Advice, onApply: (AdviceOption) -> Unit, onHide: () -> Unit) {
     val sevColor = when (a.severity) {
         AdviceSeverity.HIGH -> MaterialTheme.fit.danger
         AdviceSeverity.MEDIUM -> MaterialTheme.fit.warning
@@ -382,23 +397,21 @@ private fun AdviceCard(a: Advice, onApply: () -> Unit, onHide: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (a.action != null) {
-                    Row(
-                        Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.fit.accent)
-                            .clickable { onApply() }.padding(horizontal = 14.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Check, null, tint = MaterialTheme.fit.onAccent, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Uygula", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.onAccent)
+            a.options.forEachIndexed { i, o ->
+                if (i > 0) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.fit.cardBorder))
+                        Text("veya", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, modifier = Modifier.padding(horizontal = 8.dp))
+                        Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.fit.cardBorder))
                     }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.fit.muted, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Programda elle düzenle", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
-                    }
+                }
+                OptionRow(o, primary = i == 0) { onApply(o) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = if (a.options.isEmpty()) 0.dp else 4.dp)) {
+                if (a.options.isEmpty()) {
+                    Icon(Icons.Default.Warning, null, tint = MaterialTheme.fit.muted, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Programda elle düzenle", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -407,5 +420,53 @@ private fun AdviceCard(a: Advice, onApply: () -> Unit, onHide: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+/** Uygulama seçeneği: ne yapılacağı, kısa açıklama, süre etkisi ve Uygula düğmesi. */
+@Composable
+private fun OptionRow(o: AdviceOption, primary: Boolean, onApply: () -> Unit) {
+    val accent = MaterialTheme.fit.accent
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(if (primary) accent.copy(alpha = 0.08f) else Color.Transparent)
+            .border(1.dp, if (primary) accent.copy(alpha = 0.30f) else MaterialTheme.fit.cardBorder, RoundedCornerShape(14.dp))
+            .padding(12.dp)
+    ) {
+        Text(o.label, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+        Spacer(Modifier.height(2.dp))
+        Text(o.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TimeChip(o.minutes)
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier.clip(RoundedCornerShape(12.dp))
+                    .background(if (primary) accent else accent.copy(alpha = 0.14f))
+                    .clickable { onApply() }.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Check, null, tint = if (primary) MaterialTheme.fit.onAccent else accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Uygula", style = MaterialTheme.typography.labelLarge, color = if (primary) MaterialTheme.fit.onAccent else accent)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeChip(minutes: Int) {
+    val (text, color) = when {
+        minutes == 0 -> "Süre değişmez" to MaterialTheme.fit.success
+        minutes < 0 -> "Seans ${-minutes} dk kısalır" to MaterialTheme.fit.success
+        else -> "Seans +$minutes dk" to MaterialTheme.fit.muted
+    }
+    Row(
+        Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Timer, null, tint = color, modifier = Modifier.size(12.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(text, style = MaterialTheme.typography.labelSmall, color = color)
     }
 }

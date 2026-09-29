@@ -30,6 +30,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloseFullscreen
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -90,6 +92,10 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
     var selected by remember { mutableStateOf<String?>(null) }
     var big by remember { mutableStateOf(false) }
     var bigView by remember { mutableStateOf(BodyView.FRONT) }
+    var advisor by remember { mutableStateOf(false) }
+    var advisorFocus by remember { mutableStateOf<String?>(null) }
+    if (advisor) ProgramAdvisorScreen(vm, onDismiss = { advisor = false }, focusMuscle = advisorFocus)
+    val openAdvice: (String?) -> Unit = { k -> advisorFocus = k; advisor = true }
 
     val exMap = remember(exercises) { exercises.associateBy { it.id } }
     val dayName = remember(days) { days.associate { it.id to it.name } }
@@ -151,6 +157,8 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             ScreenHeader("Kas haritası", routine?.name ?: "Program", onBack = onDismiss) {
+                RoundIconButton(Icons.Default.AutoAwesome, MaterialTheme.fit.accent, 40.dp) { openAdvice(null) }
+                Spacer(Modifier.width(8.dp))
                 RoundIconButton(
                     if (big) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
                     MaterialTheme.fit.accent, 40.dp
@@ -218,7 +226,7 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                         val k = selected
                         if (k != null) {
                             MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(),
-                                compact = false, onClose = { selected = null })
+                                compact = false, onClose = { selected = null }, onAdvice = { openAdvice(it) })
                         } else {
                             Text(
                                 "Ayrıntı için bir kasa dokun",
@@ -292,7 +300,7 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                     selected?.let { k ->
                         item {
                             MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(),
-                                compact = false, onClose = { selected = null })
+                                compact = false, onClose = { selected = null }, onAdvice = { openAdvice(it) })
                         }
                     }
                     /* Sıralı liste */
@@ -377,7 +385,8 @@ private fun MuscleRow(key: String, value: Float, weekly: Boolean, status: LoadSt
 @Composable
 private fun MuscleDetail(
     key: String, value: Float, weekly: Boolean, status: LoadStatus?, list: List<Contribution>, compact: Boolean,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onAdvice: (String) -> Unit = {}
 ) {
     val target = MuscleMap.weeklyTarget(key)
     val color = status?.let { MuscleColors.forStatus(it) } ?: MaterialTheme.fit.accent
@@ -425,6 +434,23 @@ private fun MuscleDetail(
             }
             if (compact && list.size > 3) {
                 Text("+${list.size - 3} hareket daha", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            }
+        }
+        if (weekly && status != null && status != LoadStatus.OPTIMAL) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.fit.accent.copy(alpha = 0.10f))
+                    .clickable { onAdvice(key) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (status == LoadStatus.HIGH || status == LoadStatus.EXCESSIVE) "Nasıl azaltılır? Akıllı öneriler"
+                    else "Nasıl tamamlanır? Akıllı öneriler",
+                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.accent, modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(18.dp))
             }
         }
     }
