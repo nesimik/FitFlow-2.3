@@ -267,47 +267,6 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
             }
         }
 
-        /* Hedefler */
-        item {
-            FitCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), onClick = { showGoals = true }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Hedefler", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
-                    Text("Düzenle", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.accent)
-                }
-                Spacer(Modifier.height(14.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    GoalRow(
-                        "Haftada $goal antrenman",
-                        "${stats.thisWeekWorkouts} / $goal",
-                        stats.thisWeekWorkouts.toFloat() / goal.coerceAtLeast(1)
-                    )
-                    if (goalLiftKg > 0f) {
-                        GoalRow(
-                            "$goalLiftName ${goalLiftKg.trimNum()} kg",
-                            (liftBest?.let { it.trComma() } ?: "—") + " / ${goalLiftKg.trimNum()}",
-                            (liftBest ?: 0f) / goalLiftKg
-                        )
-                    }
-                    if (targetWeight > 0f) {
-                        val total = startWeight - targetWeight
-                        val doneKg = startWeight - latestWeight
-                        GoalRow(
-                            "Hedef kilo ${targetWeight.trimNum()} kg",
-                            "${latestWeight.trComma()} → ${targetWeight.trimNum()}",
-                            if (kotlin.math.abs(total) < 0.05f) 1f else doneKg / total
-                        )
-                    }
-                    if (goalLiftKg <= 0f && targetWeight <= 0f) {
-                        Text(
-                            "Güç ve kilo hedefi eklemek için dokun.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.fit.muted
-                        )
-                    }
-                }
-            }
-        }
-
         /* Ayar satırları */
         item {
             FitCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {

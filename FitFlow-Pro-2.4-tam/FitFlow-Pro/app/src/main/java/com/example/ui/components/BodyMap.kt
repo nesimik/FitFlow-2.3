@@ -163,6 +163,16 @@ private class Piece(points: List<Offset>, angleDeg: Float) {
         }
     }
 
+    /** Katman sınırı (kasın çevresi + küçük pay). */
+    val layerRect: Rect = Rect(bounds.left - 2f, bounds.top - 2f, bounds.right + 2f, bounds.bottom + 2f)
+
+    /** Kasın DIŞI: katman dikdörtgeni eksi kas şekli. Lif ve gölgenin taşan kısmını silmek için. */
+    val outside: Path = Path().apply {
+        fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
+        addRect(layerRect)
+        addPath(path)
+    }
+
     fun contains(p: Offset): Boolean = bounds.contains(p)
 }
 
@@ -209,11 +219,11 @@ private fun DrawScope.drawMuscle(piece: Piece, base: Color, detailed: Boolean) {
     // (clipPath kenarları yumuşatmaz; büyük çizimde basamaklı görünürdü.)
     if (detailed) {
         // Büyük çizim: katman + DstIn maske (kenar yumuşatmalı)
-        val layerBounds = Rect(b.left - 2f, b.top - 2f, b.right + 2f, b.bottom + 2f)
-        drawContext.canvas.saveLayer(layerBounds, androidx.compose.ui.graphics.Paint())
+        // Katman: lif + iç gölge çizilir, sonra kasın dışında kalan her şey (kenar yumuşatmalı) silinir.
+        drawContext.canvas.saveLayer(piece.layerRect, androidx.compose.ui.graphics.Paint())
         drawPath(piece.fibers, Color.White.copy(alpha = 0.12f), style = Stroke(0.28f, cap = StrokeCap.Round))
         drawPath(piece.path, Color.Black.copy(alpha = 0.30f), style = Stroke(1.3f, join = StrokeJoin.Round))
-        drawPath(piece.path, Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+        drawPath(piece.outside, Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
         drawContext.canvas.restore()
     } else {
         // Küçük önizleme: hızlı kırpma (bu boyutta basamak fark edilmez)

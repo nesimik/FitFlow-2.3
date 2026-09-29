@@ -14,8 +14,8 @@ android {
     applicationId = "com.nesimi.fitflow2"
     minSdk = 24
     targetSdk = 36
-    versionCode = 25
-    versionName = "2.23"
+    versionCode = 26
+    versionName = "2.24"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -47,6 +47,10 @@ android {
       }
     }
     debug {
+      // Kullanılmayan kod ve ikonlar ayıklanır: APK ~22 MB'dan birkaç MB'a iner, indirme hızlanır.
+      isMinifyEnabled = true
+      isShrinkResources = true
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       // AI Studio kendi debug.keystore dosyasını sağlar. Dosya yoksa (Android Studio'da açıldığında)
       // Android'in standart debug anahtarı kullanılır; böylece proje her ortamda derlenir.
       if (file("${rootDir}/debug.keystore").exists()) {
@@ -98,6 +102,8 @@ dependencies {
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.health.connect.client)
   implementation(libs.androidx.biometric)
+  // biometric 1.1.0 eski fragment (1.2.5) getirir; o sürüm kamera/galeri/dosya seçicide çöker.
+  implementation(libs.androidx.fragment.ktx)
   // implementation(libs.coil.compose)
   // implementation(libs.firebase.ai)
   implementation(libs.kotlinx.coroutines.android)

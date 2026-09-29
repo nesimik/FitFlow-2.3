@@ -19,3 +19,13 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# --- FitFlow ---
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod, SourceFile, LineNumberTable
+# Room varlıkları ve DAO
+-keep class com.example.data.** { *; }
+# WorkManager işçileri, widget ve bildirim alıcıları (sınıf adıyla oluşturulur)
+-keep class com.example.work.** { *; }
+-keep class com.example.ui.RestActionReceiver { *; }
+-keep class com.example.MainActivity { *; }
+-dontwarn org.jetbrains.annotations.**
