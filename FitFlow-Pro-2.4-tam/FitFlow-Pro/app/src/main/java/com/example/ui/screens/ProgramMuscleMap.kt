@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -175,6 +178,9 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                         selected = selected,
                         onMuscleTap = { selected = if (selected == it) null else it }
                     )
+                    selected?.let { k ->
+                        SelectedPill(k, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { selected = null }
+                    }
                     Row(
                         Modifier.align(Alignment.TopCenter).padding(top = 10.dp).clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surface).padding(3.dp)
@@ -191,8 +197,14 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                     }
                 }
                 selected?.let { k ->
-                    Box(Modifier.padding(12.dp)) {
-                        MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(), compact = true)
+                    // Detay kaydırılabilir; harita üstte küçülür, kart hiçbir zaman ekrandan taşmaz.
+                    Box(
+                        Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(),
+                            compact = false, onClose = { selected = null })
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -247,6 +259,9 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                                         )
                                     }
                                 }
+                                selected?.let { k ->
+                                    SelectedPill(k, Modifier.align(Alignment.TopEnd).padding(6.dp)) { selected = null }
+                                }
                             }
                             Spacer(Modifier.height(8.dp))
                             Legend(mode, weekly)
@@ -254,7 +269,10 @@ fun ProgramMuscleMapScreen(vm: AppViewModel, onDismiss: () -> Unit) {
                     }
                     /* Seçili kas */
                     selected?.let { k ->
-                        item { MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(), compact = false) }
+                        item {
+                            MuscleDetail(k, sets[k] ?: 0f, weekly, if (weekly) statusOf(k) else null, contributions[k].orEmpty(),
+                                compact = false, onClose = { selected = null })
+                        }
                     }
                     /* Sıralı liste */
                     item {
@@ -336,7 +354,10 @@ private fun MuscleRow(key: String, value: Float, weekly: Boolean, status: LoadSt
 }
 
 @Composable
-private fun MuscleDetail(key: String, value: Float, weekly: Boolean, status: LoadStatus?, list: List<Contribution>, compact: Boolean) {
+private fun MuscleDetail(
+    key: String, value: Float, weekly: Boolean, status: LoadStatus?, list: List<Contribution>, compact: Boolean,
+    onClose: () -> Unit
+) {
     val target = MuscleMap.weeklyTarget(key)
     val color = status?.let { MuscleColors.forStatus(it) } ?: MaterialTheme.fit.accent
     FitCard(border = color.copy(alpha = 0.45f), contentPadding = PaddingValues(14.dp)) {
@@ -345,6 +366,11 @@ private fun MuscleDetail(key: String, value: Float, weekly: Boolean, status: Loa
             Spacer(Modifier.width(8.dp))
             Text(MuscleMap.label(key), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Text("${value.trimNum().replace('.', ',')} set", style = MaterialTheme.typography.titleSmall.mono(), color = color)
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(30.dp).clip(CircleShape).background(MaterialTheme.fit.elevated).clickable { onClose() },
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Default.Close, "Kapat", tint = MaterialTheme.fit.muted, modifier = Modifier.size(16.dp)) }
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -380,5 +406,21 @@ private fun MuscleDetail(key: String, value: Float, weekly: Boolean, status: Loa
                 Text("+${list.size - 3} hareket daha", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
             }
         }
+    }
+}
+
+
+/** Harita üstünde seçili kasın adı ve kapatma düğmesi. */
+@Composable
+private fun SelectedPill(key: String, modifier: Modifier, onClear: () -> Unit) {
+    Row(
+        modifier.clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.fit.accent.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+            .clickable { onClear() }.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(MuscleMap.label(key), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.accent)
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.Default.Close, "Seçimi kaldır", tint = MaterialTheme.fit.muted, modifier = Modifier.size(16.dp))
     }
 }
