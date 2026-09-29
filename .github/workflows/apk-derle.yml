@@ -35,7 +35,22 @@ jobs:
           echo "Proje klasörü: $DIR"
           cd "$DIR"
           [ -f .env.example ] || echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env.example
-          gradle assembleDebug --stacktrace
+          set +e
+          gradle assembleDebug --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            # Derleyici hatalarını GitHub notu (annotation) olarak da yaz: kayıt indirilemese bile okunabilsin.
+            grep -E "^e: |error:|What went wrong|> Task .* FAILED|Execution failed" -A2 "$GITHUB_WORKSPACE/build.log" \
+              | grep -v "^--$" | head -120 > "$GITHUB_WORKSPACE/errors.txt" || true
+            split -l 12 "$GITHUB_WORKSPACE/errors.txt" "$GITHUB_WORKSPACE/errpart_" || true
+            for f in "$GITHUB_WORKSPACE"/errpart_*; do
+              [ -f "$f" ] || continue
+              MSG=$(sed 's/%/%25/g' "$f" | awk 'BEGIN{ORS="%0A"}{print}')
+              echo "::error title=Derleme hatası::$MSG"
+            done
+            exit "$STATUS"
+          fi
 
       - name: APK'yı yükle
         uses: actions/upload-artifact@v4
