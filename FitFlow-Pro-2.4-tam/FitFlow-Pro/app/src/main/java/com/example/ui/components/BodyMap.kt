@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
@@ -216,7 +217,7 @@ private fun DrawScope.drawMuscle(piece: Piece, base: Color, detailed: Boolean) {
         drawContext.canvas.restore()
     } else {
         // Küçük önizleme: hızlı kırpma (bu boyutta basamak fark edilmez)
-        androidx.compose.ui.graphics.drawscope.clipPath(piece.path) {
+        clipPath(piece.path) {
             drawPath(piece.path, Color.Black.copy(alpha = 0.30f), style = Stroke(1.3f, join = StrokeJoin.Round))
         }
     }
