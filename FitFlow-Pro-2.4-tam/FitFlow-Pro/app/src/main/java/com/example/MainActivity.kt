@@ -46,6 +46,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val accent by vm.settings.accent.collectAsStateWithLifecycle()
             val amoled by vm.settings.amoled.collectAsStateWithLifecycle()
             val fontScale by vm.settings.fontScale.collectAsStateWithLifecycle()
+            val cardGradient by vm.settings.cardGradient.collectAsStateWithLifecycle()
             val keepScreenOn by vm.settings.keepScreenOn.collectAsStateWithLifecycle()
             val activeWorkout by vm.activeWorkout.collectAsStateWithLifecycle()
 
@@ -59,7 +60,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 themeMode = themeMode,
                 accentHex = accent,
                 amoled = amoled,
-                fontScale = fontScale
+                fontScale = fontScale,
+                cardGradient = cardGradient
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

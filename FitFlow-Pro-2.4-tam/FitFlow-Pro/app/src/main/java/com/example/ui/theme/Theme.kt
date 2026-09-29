@@ -115,7 +115,9 @@ data class FitColors(
     val muted: Color,
     val cardBorder: Color,
     val elevated: Color,
-    val isDark: Boolean
+    val isDark: Boolean,
+    /** Kartların sol üstündeki vurgu renginden zemine geçişin gücü (0 = düz kart). */
+    val cardGlow: Float = 0f
 )
 
 val LocalFitColors = staticCompositionLocalOf {
@@ -173,6 +175,7 @@ fun FitFlowTheme(
     accentHex: String = "#3CD3EB",
     amoled: Boolean = false,
     fontScale: Float = 1f,
+    cardGradient: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -234,7 +237,8 @@ fun FitFlowTheme(
         muted = if (dark) Palette.onDarkMuted else Palette.onLightMuted,
         cardBorder = if (dark) (if (amoled) Palette.cardLineAmoled else Palette.cardLineDark) else Palette.outlineLight,
         elevated = if (dark) (if (amoled) Palette.surfaceAmoled2 else Palette.surfaceDark2) else Palette.surfaceLight2,
-        isDark = dark
+        isDark = dark,
+        cardGlow = if (!cardGradient) 0f else if (dark) 0.085f else 0.06f
     )
 
     val view = LocalView.current

@@ -86,6 +86,11 @@ class SettingsStore(context: Context) {
     val amoled: StateFlow<Boolean> = _amoled.asStateFlow()
     fun setAmoled(v: Boolean) { _amoled.value = v; prefs.edit().putBoolean(K_AMOLED, v).apply() }
 
+    private val _cardGradient = flow(prefs.getBoolean("card_gradient", true))
+    /** Kartlarda vurgu renginden hafif renk geçişi. */
+    val cardGradient: StateFlow<Boolean> = _cardGradient.asStateFlow()
+    fun setCardGradient(v: Boolean) { _cardGradient.value = v; prefs.edit().putBoolean("card_gradient", v).apply() }
+
     private val _fontScale = flow(prefs.getFloat(K_FONT_SCALE, 1f))
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
     fun setFontScale(v: Float) { _fontScale.value = v; prefs.edit().putFloat(K_FONT_SCALE, v).apply() }

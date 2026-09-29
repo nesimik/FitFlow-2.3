@@ -84,6 +84,7 @@ import com.example.ui.components.OverlineText
 import com.example.ui.components.RoundIconButton
 import com.example.ui.theme.Palette
 import com.example.ui.theme.fit
+import com.example.ui.components.cardBackground
 import com.example.ui.theme.mono
 
 /* ==========================================================================
@@ -150,7 +151,7 @@ fun ProgramDayCard(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
+            .then(Modifier.cardBackground())
             .border(1.dp, borderColor, shape)
     ) {
         /* Başlık — dokununca aç/kapa */

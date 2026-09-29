@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.text.font.FontWeight
@@ -814,11 +815,10 @@ fun ExerciseBrowserDialog(
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Column(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
         ) {
             ScreenHeader(
                 title = title,
@@ -887,7 +887,11 @@ fun ExerciseBrowserDialog(
                 }
             }
             if (multi) {
-                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().padding(16.dp)) {
+                Box(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars)
+                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
+                ) {
                     com.example.ui.components.AccentButton(
                         if (selected.size >= 2) "Süperset oluştur (${selected.size})" else "En az 2 hareket seç",
                         { onPickMany(selected.toList()) },

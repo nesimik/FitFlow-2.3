@@ -79,6 +79,7 @@ import com.example.ui.components.RoundIconButton
 import com.example.ui.theme.Palette
 import com.example.ui.theme.onColorFor
 import com.example.ui.theme.fit
+import com.example.ui.components.cardBackground
 import com.example.ui.theme.mono
 import com.example.ui.theme.overline
 import java.util.Calendar
@@ -788,7 +789,7 @@ private fun QuickTile(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
     Column(
         modifier
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
+            .then(Modifier.cardBackground())
             .border(1.dp, MaterialTheme.fit.cardBorder, shape)
             .clickable { onClick() }
             .padding(vertical = 12.dp),

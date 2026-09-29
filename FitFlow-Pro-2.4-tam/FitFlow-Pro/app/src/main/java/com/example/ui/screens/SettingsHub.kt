@@ -221,6 +221,7 @@ private fun LookPage(vm: AppViewModel) {
     val accent by s.accent.collectAsStateWithLifecycle()
     val amoled by s.amoled.collectAsStateWithLifecycle()
     val fontScale by s.fontScale.collectAsStateWithLifecycle()
+    val cardGrad by s.cardGradient.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         ThemePreview()
         FitCard {
@@ -231,6 +232,7 @@ private fun LookPage(vm: AppViewModel) {
             }
             Spacer(Modifier.height(6.dp))
             LabeledSwitch("AMOLED siyah", "Tam siyah zemin, kartlar koyu gri; pil dostu", amoled) { s.setAmoled(it) }
+            LabeledSwitch("Kartlarda renk geçişi", "Kartların köşesinde vurgu renginden hafif geçiş", cardGrad) { s.setCardGradient(it) }
         }
         FitCard {
             OverlineText("Vurgu rengi")

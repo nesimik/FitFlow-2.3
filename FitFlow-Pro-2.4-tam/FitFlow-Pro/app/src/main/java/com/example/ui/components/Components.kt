@@ -72,6 +72,25 @@ val LocalMenuAction = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 /* --------------------------------- Kartlar --------------------------------- */
 
+/**
+ * Kart zemini: vurgu renginden (sol üst) kart rengine hafif bir geçiş.
+ * Ayarlar > Görünüm > "Kartlarda renk geçişi" kapalıysa düz kart rengi.
+ */
+@Composable
+fun Modifier.cardBackground(): Modifier {
+    val surface = MaterialTheme.colorScheme.surface
+    val glow = MaterialTheme.fit.cardGlow
+    if (glow <= 0f) return this.background(surface)
+    val accent = MaterialTheme.fit.accent
+    return this.background(surface).background(
+        androidx.compose.ui.graphics.Brush.linearGradient(
+            0f to accent.copy(alpha = glow),
+            0.45f to accent.copy(alpha = glow * 0.25f),
+            0.8f to Color.Transparent
+        )
+    )
+}
+
 @Composable
 fun FitCard(
     modifier: Modifier = Modifier,
@@ -84,7 +103,7 @@ fun FitCard(
 ) {
     val base = modifier
         .clip(RoundedCornerShape(corner))
-        .background(container)
+        .then(if (container == MaterialTheme.colorScheme.surface) Modifier.cardBackground() else Modifier.background(container))
         .border(1.dp, border, RoundedCornerShape(corner))
     Column(
         modifier = (if (onClick != null) base.clickable { onClick() } else base).padding(contentPadding),
