@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -113,9 +112,26 @@ private fun chaikin(points: List<Offset>, iterations: Int): List<Offset> {
     return pts
 }
 
+/**
+ * Kapalı çokgeni, köşelerden geçmeyen kesintisiz ikinci derece eğrilere çevirir
+ * (her kenarın orta noktasından geçer, köşeler kontrol noktası olur). Böylece harita
+ * ne kadar büyütülürse büyütülsün kenarlarda köşe / basamak görünmez.
+ */
 private fun toPath(points: List<Offset>): Path = Path().apply {
-    moveTo(points[0].x, points[0].y)
-    for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
+    val n = points.size
+    if (n < 3) {
+        moveTo(points[0].x, points[0].y)
+        for (i in 1 until n) lineTo(points[i].x, points[i].y)
+        close(); return@apply
+    }
+    fun mid(a: Offset, b: Offset) = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+    val start = mid(points[n - 1], points[0])
+    moveTo(start.x, start.y)
+    for (i in 0 until n) {
+        val p = points[i]
+        val m = mid(p, points[(i + 1) % n])
+        quadraticBezierTo(p.x, p.y, m.x, m.y)
+    }
     close()
 }
 
@@ -157,11 +173,11 @@ private class Region(val key: String, val group: String, val pieces: List<Piece>
 
 private fun buildRegions(list: List<BodyData.Region>): List<Region> = list.map { r ->
     val angle = BodyData.fiberAngle(r.key)
-    Region(r.key, r.group, parsePolygons(r.data).map { Piece(chaikin(it, 1), angle) })
+    Region(r.key, r.group, parsePolygons(r.data).map { Piece(chaikin(it, 2), angle) })
 }
 
-private val frontBody: List<Path> by lazy { parsePolygons(BodyData.FRONT_BODY).map { toPath(chaikin(it, 1)) } }
-private val backBody: List<Path> by lazy { parsePolygons(BodyData.BACK_BODY).map { toPath(chaikin(it, 1)) } }
+private val frontBody: List<Path> by lazy { parsePolygons(BodyData.FRONT_BODY).map { toPath(chaikin(it, 2)) } }
+private val backBody: List<Path> by lazy { parsePolygons(BodyData.BACK_BODY).map { toPath(chaikin(it, 2)) } }
 private val frontRegions: List<Region> by lazy { buildRegions(BodyData.FRONT) }
 private val backRegions: List<Region> by lazy { buildRegions(BodyData.BACK) }
 
@@ -188,12 +204,21 @@ private fun DrawScope.drawMuscle(piece: Piece, base: Color, detailed: Boolean) {
             radius = max(b.width, b.height) * 0.85f
         )
     )
-    // 3-4) lif dokusu + iç gölge (kasın içine kırpılmış)
-    clipPath(piece.path) {
-        if (detailed) {
-            drawPath(piece.fibers, Color.White.copy(alpha = 0.12f), style = Stroke(0.28f, cap = StrokeCap.Round))
-        }
+    // 3-4) lif dokusu + iç gölge — kasın şekline "SrcAtop" katmanla sınırlanır.
+    // (clipPath kenarları yumuşatmaz; büyük çizimde basamaklı görünürdü.)
+    if (detailed) {
+        // Büyük çizim: katman + DstIn maske (kenar yumuşatmalı)
+        val layerBounds = Rect(b.left - 2f, b.top - 2f, b.right + 2f, b.bottom + 2f)
+        drawContext.canvas.saveLayer(layerBounds, androidx.compose.ui.graphics.Paint())
+        drawPath(piece.fibers, Color.White.copy(alpha = 0.12f), style = Stroke(0.28f, cap = StrokeCap.Round))
         drawPath(piece.path, Color.Black.copy(alpha = 0.30f), style = Stroke(1.3f, join = StrokeJoin.Round))
+        drawPath(piece.path, Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+        drawContext.canvas.restore()
+    } else {
+        // Küçük önizleme: hızlı kırpma (bu boyutta basamak fark edilmez)
+        androidx.compose.ui.graphics.drawscope.clipPath(piece.path) {
+            drawPath(piece.path, Color.Black.copy(alpha = 0.30f), style = Stroke(1.3f, join = StrokeJoin.Round))
+        }
     }
     // 5) kenar ışığı
     drawPath(piece.path, base.lighten(0.5f).copy(alpha = 0.22f), style = Stroke(0.3f, join = StrokeJoin.Round))

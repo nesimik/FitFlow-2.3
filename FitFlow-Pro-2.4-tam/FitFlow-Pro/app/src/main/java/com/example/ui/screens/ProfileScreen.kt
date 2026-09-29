@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ColorLens
@@ -152,7 +153,7 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 if (nav.previousBackStackEntry != null) {
                     RoundIconButton(Icons.AutoMirrored.Filled.ArrowBack, MaterialTheme.colorScheme.onSurface, 40.dp, MaterialTheme.fit.elevated) { nav.popBackStack() }
@@ -161,9 +162,18 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
                     "Profil",
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).padding(top = 10.dp)
                 )
-                RoundIconButton(Icons.Default.Edit, MaterialTheme.colorScheme.onSurface, 40.dp, MaterialTheme.fit.elevated) { showEdit = true }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RoundIconButton(Icons.Default.Edit, MaterialTheme.colorScheme.onSurface, 40.dp, MaterialTheme.fit.elevated) { showEdit = true }
+                    // Gece / gündüz: tek dokunuşla koyu ↔ açık tema
+                    val isDark = MaterialTheme.fit.isDark
+                    RoundIconButton(
+                        if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        if (isDark) MaterialTheme.fit.gold else MaterialTheme.colorScheme.onSurface,
+                        40.dp, MaterialTheme.fit.elevated
+                    ) { vm.settings.setThemeMode(if (isDark) "light" else "dark") }
+                }
             }
         }
 
@@ -305,15 +315,7 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
                 SettingRow(Icons.Default.History, "Antrenman geçmişi", "${stats.totalWorkouts}") { nav.navigate(Routes.HISTORY) }
                 SettingRow(Icons.Default.EditNote, "Notlar", "") { nav.navigate(Routes.NOTES) }
                 SettingRow(Icons.Default.Calculate, "Hesaplayıcılar", "1RM, plaka") { nav.navigate(Routes.TOOLS) }
-                SettingRow(
-                    Icons.Default.DarkMode, "Tema",
-                    when (themeMode) { "light" -> "Açık"; "system" -> "Sistem"; else -> "Koyu" }
-                ) { nav.navigate(Routes.SETTINGS) }
-                SettingRow(
-                    Icons.Default.ColorLens, "Vurgu rengi",
-                    Palette.accentPresets.firstOrNull { it.second.equals(accentHex, ignoreCase = true) }?.first ?: "Özel"
-                ) { nav.navigate(Routes.SETTINGS) }
-                SettingRow(Icons.Default.Settings, "Tüm ayarlar", "", divider = false) { nav.navigate(Routes.SETTINGS) }
+                SettingRow(Icons.Default.Settings, "Ayarlar", "görünüm, antrenman, ekipman…", divider = false) { nav.navigate(Routes.SETTINGS) }
             }
         }
 
