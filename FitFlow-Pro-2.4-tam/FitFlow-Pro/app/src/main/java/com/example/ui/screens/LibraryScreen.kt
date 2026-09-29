@@ -889,7 +889,7 @@ fun ExerciseBrowserDialog(
             if (multi) {
                 Box(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-                        .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars)
+                        .navigationBarsPadding()
                         .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)
                 ) {
                     com.example.ui.components.AccentButton(
