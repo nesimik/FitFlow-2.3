@@ -166,7 +166,7 @@ fun StatsScreen(vm: AppViewModel, nav: NavHostController) {
         Spacer(Modifier.height(8.dp))
         when (tab) {
             0 -> OverviewTab(vm, nav)
-            1 -> MusclesTab(vm)
+            1 -> MusclesTab(vm, nav)
             2 -> StrengthTab(vm, nav)
             else -> Column {
                 Text(
@@ -724,7 +724,7 @@ private fun RpeCard(rpe: List<Pair<String, Float>>) {
 /* ================================ 2. KASLAR ================================ */
 
 @Composable
-private fun MusclesTab(vm: AppViewModel) {
+private fun MusclesTab(vm: AppViewModel, nav: NavHostController) {
     val weekLoads by vm.weeklyMuscleLoads.collectAsStateWithLifecycle()
     val monthLoads by vm.monthlyMuscleLoads.collectAsStateWithLifecycle()
     val weekDetail by vm.weeklyDetailLoads.collectAsStateWithLifecycle()
@@ -1000,6 +1000,11 @@ private fun MusclesTab(vm: AppViewModel) {
                                 periodWeeks = periodWeeks
                             )
                         }
+                        val strength = remember(key, allSets, exercises) { com.example.core.StrengthInsights.muscleStrength(key, allSets, exercises) }
+                        strength?.let { st ->
+                            Spacer(Modifier.height(12.dp))
+                            MuscleStrengthRow(st) { nav.navigate("${Routes.EXERCISE}/${st.exerciseId}") }
+                        }
                         Spacer(Modifier.height(14.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         Spacer(Modifier.height(12.dp))
@@ -1038,6 +1043,14 @@ private fun MusclesTab(vm: AppViewModel) {
                     }
                 }
             }
+        }
+
+        /* --------------------------- Program uyumu (2.28) --------------------------- */
+        item(key = "adherence") {
+            val adh = remember(routineDays, allItems, workouts, allSets, exercises) {
+                com.example.core.StrengthInsights.adherence(routineDays, allItems, workouts, allSets, exercises)
+            }
+            if (adh != null) AdherenceCard(adh)
         }
 
         /* ---------------------------- Tüm kas dökümü ---------------------------- */
@@ -1096,6 +1109,11 @@ private fun MusclesTab(vm: AppViewModel) {
             }
         }
 
+        /* ------------------------ Kas × hafta ısı haritası (2.28) ------------------------ */
+        item(key = "heatmap") {
+            val grid = remember(allSets, exercises) { com.example.core.StrengthInsights.muscleWeekGrid(allSets, exercises) }
+            if (grid.rows.values.any { r -> r.any { it > 0f } }) MuscleHeatmapCard(grid)
+        }
     }
 }
 
@@ -1132,12 +1150,17 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
     val profile by vm.strengthProfile.collectAsStateWithLifecycle()
     val bestLifts by vm.bestLifts.collectAsStateWithLifecycle()
     val allSets by vm.allSets.collectAsStateWithLifecycle()
+    val exercises by vm.exercises.collectAsStateWithLifecycle()
     val bodyWeight by vm.settings.weightKg.collectAsStateWithLifecycle()
+    val isMale by vm.settings.isMale.collectAsStateWithLifecycle()
+    val goals by vm.settings.strengthGoals.collectAsStateWithLifecycle()
     val activeDays by vm.routineDays.collectAsStateWithLifecycle()
     val allItems by vm.allItems.collectAsStateWithLifecycle()
 
     val balance = remember(profile) { ProgressAnalytics.liftBalance(profile) }
     val total = remember(profile) { ProgressAnalytics.totalScore(profile) }
+    val change12 = remember(allSets, bodyWeight, isMale) { com.example.core.StrengthInsights.totalChange(allSets, bodyWeight, isMale) }
+    val plateaus = remember(allSets, exercises) { com.example.core.StrengthInsights.plateaus(allSets, exercises) }
 
     // Aktif programdaki hareketler
     val activeExerciseIds = remember(activeDays, allItems) {
@@ -1145,7 +1168,7 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
         allItems.filter { it.dayId in activeDayIds }.map { it.exerciseId }.toSet()
     }
 
-    // 1RM gelişimi: Aktif programda olan VEYA son 3 hafta (21 gün) içinde en az 1 kez yapılmış olan dinamik hareketler
+    // 1RM gelişimi: Aktif programda olan VEYA son 3 hafta içinde yapılmış, en az 2 seanslı hareketler
     val trackable = remember(allSets, activeExerciseIds) {
         val now = System.currentTimeMillis()
         val threeWeeksCutoff = now - 21L * 24 * 3600 * 1000L
@@ -1157,9 +1180,7 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
                 val distinctWorkouts = sets.map { s -> s.workoutId }.distinct().size
                 if (distinctWorkouts < 2) return@filter false
                 val latestSetTime = sets.maxOfOrNull { it.performedAt } ?: 0L
-                val inActiveProgram = entry.key in activeExerciseIds
-                val doneRecently = latestSetTime >= threeWeeksCutoff
-                inActiveProgram || doneRecently
+                entry.key in activeExerciseIds || latestSetTime >= threeWeeksCutoff
             }
             .entries
             .sortedByDescending { it.value.maxOfOrNull { s -> s.performedAt } ?: 0L }
@@ -1167,11 +1188,18 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
             .map { it.key to it.value.first().exerciseName }
     }
     var selectedExercise by remember(trackable) { mutableStateOf(trackable.firstOrNull()?.first) }
+    var goalFor by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(trackable) {
         if (selectedExercise == null || trackable.none { it.first == selectedExercise }) {
             selectedExercise = trackable.firstOrNull()?.first
         }
+    }
+
+    goalFor?.let { id ->
+        val name = trackable.firstOrNull { it.first == id }?.second ?: ""
+        val best = remember(allSets, id) { vm.progressFor(id).maxOfOrNull { it.e1rm } ?: 0f }
+        GoalDialog(name, best, goals[id], onSave = { vm.settings.setStrengthGoal(id, it); goalFor = null }, onDismiss = { goalFor = null })
     }
 
     LazyColumn(
@@ -1192,46 +1220,11 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
                 }
             }
         } else {
-            if (balance.isNotEmpty()) {
-                item { LiftBalanceCard(balance) }
-            }
-            item {
-                Column {
-                    SectionHeader("Güç seviyesi", "Vücut ağırlığı: ${bodyWeight.trimNum()} kg")
-                    Spacer(Modifier.height(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        profile.forEach { lift -> LiftStandardCard(lift, nav) }
-                    }
-                }
-            }
-
-            if (total > 0f) {
-                item {
-                    FitCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                OverlineText("SQUAT + BENCH + DEADLIFT")
-                                Spacer(Modifier.height(4.dp))
-                                Text(total.kg(), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.fit.gold)
-                            }
-                            if (bodyWeight > 0f) {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        "${(total / bodyWeight).trimNum()}×",
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        color = MaterialTheme.fit.accent
-                                    )
-                                    Text("vücut ağırlığı", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
+            /* 1) Güç özeti */
+            item { StrengthSummaryCard(profile, total, bodyWeight, change12) }
         }
 
-        /* --------------------------- 1RM gelişim grafiği ------------------------- */
+        /* 2) 1RM gelişimi + hedef */
         if (trackable.isNotEmpty()) {
             item {
                 Column {
@@ -1242,40 +1235,60 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
                         trackable.forEach { (id, name) ->
-                            ChoiceChip(name, selectedExercise == id, { selectedExercise = id })
+                            ChoiceChip(name + if (goals.containsKey(id)) " ⚑" else "", selectedExercise == id, { selectedExercise = id })
                         }
                     }
                     Spacer(Modifier.height(12.dp))
                     val exId = selectedExercise
                     if (exId != null) {
                         val points = remember(allSets, exId) { vm.progressFor(exId) }
-                        val trend = remember(allSets, exId) {
-                            ProgressAnalytics.trendPct(allSets.filter { it.exerciseId == exId })
+                        E1rmCard(points, goals[exId]) { goalFor = exId }
+                    }
+                }
+            }
+            /* 3) Tekrar–ağırlık tablosu */
+            selectedExercise?.let { exId ->
+                item(key = "repmax_$exId") {
+                    val ex = exercises.firstOrNull { it.id == exId }
+                    val exSets = remember(allSets, exId) { allSets.filter { it.exerciseId == exId } }
+                    val e1rm = remember(exSets) {
+                        exSets.filter { com.example.core.Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..12 }
+                            .maxOfOrNull { com.example.core.Calc.e1rm(it.weightKg, it.reps) } ?: 0f
+                    }
+                    if (e1rm > 0f) {
+                        val lp = remember { vm.settings.loadingProfile() }
+                        val kind = com.example.core.loadKindOf(ex?.equipment ?: "")
+                        val rows = remember(exSets, e1rm) {
+                            com.example.core.StrengthInsights.repMaxTable(exSets, e1rm, { w -> if (kind == com.example.core.LoadKind.BODYWEIGHT) w else lp.round(w, kind) })
                         }
-                        FitCard {
-                            LineChart(
-                                points.map { it.e1rm },
-                                points.map { formatDateShort(it.dateMillis) },
-                                suffix = " kg",
-                                height = 180.dp
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                MiniStat("Seans", "${points.size}", Modifier.weight(1f))
-                                MiniStat("En iyi", (points.maxOfOrNull { it.e1rm } ?: 0f).kg(), Modifier.weight(1f))
-                                MiniStat(
-                                    "Son 4 seans",
-                                    (if (trend >= 0f) "+" else "") + "%${trend.roundToInt()}",
-                                    Modifier.weight(1f)
-                                )
-                            }
-                        }
+                        RepMaxCard(ex?.name ?: exSets.first().exerciseName, e1rm, rows)
                     }
                 }
             }
         }
 
-        /* ----------------------------- Sıralama listesi -------------------------- */
+        /* 4) Plato */
+        if (plateaus.isNotEmpty()) {
+            item { PlateauCard(plateaus) { id -> nav.navigate("${Routes.EXERCISE}/$id") } }
+        }
+
+        /* 5) Seviyeler ve denge */
+        if (profile.isNotEmpty()) {
+            item {
+                Column {
+                    SectionHeader("Güç seviyesi", "Vücut ağırlığı: ${bodyWeight.trimNum()} kg")
+                    Spacer(Modifier.height(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        profile.forEach { lift -> LiftStandardCard(lift, nav) }
+                    }
+                }
+            }
+            if (balance.isNotEmpty()) {
+                item { LiftBalanceCard(balance) }
+            }
+        }
+
+        /* 6) Sıralama listesi */
         if (bestLifts.isNotEmpty()) {
             item {
                 Column {
@@ -1293,32 +1306,13 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
                                         .padding(vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        "${i + 1}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.fit.muted,
-                                        modifier = Modifier.width(24.dp)
-                                    )
-                                    Text(
-                                        entry.value.first,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Text("${i + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.fit.muted, modifier = Modifier.width(24.dp))
+                                    Text(entry.value.first, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     if (bodyWeight > 0f) {
-                                        Text(
-                                            "${(entry.value.second / bodyWeight).trimNum()}×",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.fit.muted
-                                        )
+                                        Text("${(entry.value.second / bodyWeight).trimNum()}×", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
                                         Spacer(Modifier.width(10.dp))
                                     }
-                                    Text(
-                                        entry.value.second.kg(),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.fit.gold
-                                    )
+                                    Text(entry.value.second.kg(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.fit.gold)
                                 }
                             }
                     }

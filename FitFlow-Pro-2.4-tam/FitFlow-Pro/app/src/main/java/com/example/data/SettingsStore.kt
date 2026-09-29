@@ -284,6 +284,22 @@ class SettingsStore(context: Context) {
     }
     init { prefs.registerOnSharedPreferenceChangeListener(prefListener) }
 
+    /* ------------------------------ 1RM hedefleri ------------------------------ */
+    private val _strengthGoals = flow(parseGoals(prefs.getString(K_STRENGTH_GOALS, "") ?: ""))
+    /** Hareket id → hedef tahmini 1RM (kg). */
+    val strengthGoals: StateFlow<Map<Long, Float>> = _strengthGoals.asStateFlow()
+    fun setStrengthGoal(exerciseId: Long, kg: Float?) {
+        val m = _strengthGoals.value.toMutableMap()
+        if (kg == null || kg <= 0f) m.remove(exerciseId) else m[exerciseId] = kg
+        _strengthGoals.value = m
+        prefs.edit().putString(K_STRENGTH_GOALS, m.entries.joinToString(",") { "${it.key}=${it.value}" }).apply()
+    }
+    private fun parseGoals(s: String): Map<Long, Float> = s.split(',').mapNotNull { e ->
+        val p = e.split('=')
+        val id = p.getOrNull(0)?.toLongOrNull(); val v = p.getOrNull(1)?.toFloatOrNull()
+        if (id != null && v != null) id to v else null
+    }.toMap()
+
     /* ------------------------ Hareket başına merdiven ------------------------ */
     private val _ladders = flow(parseLadders(prefs.getString(K_LADDERS, "") ?: ""))
     /** Program hareketi (RoutineItem id) → merdiven ayarı. Varsayılan ayarlar saklanmaz. */
@@ -368,6 +384,7 @@ class SettingsStore(context: Context) {
         const val K_LAST_REPORT_WEEK = "last_report_week"; const val K_LAST_REMINDER_DAY = "last_reminder_day"
         const val K_HEALTH = "health_connect_on"
         const val K_LADDERS = "ladder_configs"
+        const val K_STRENGTH_GOALS = "strength_goals"
         const val K_PLATES = "plates"; const val K_DUMBBELLS = "dumbbells"
         const val K_LADDER_ON = "ladder_on"; const val K_WARMUP_ON = "warmup_on"; const val K_RPE_ON = "rpe_on"
         const val K_PR_CELEBRATE = "pr_celebrate"; const val K_BIOMETRIC = "biometric_on"; const val K_PASS_LEN = "pass_len"
