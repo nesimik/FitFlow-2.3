@@ -1167,7 +1167,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * Bir program gününün, seans başlamadan önceki reçetesi (ana ekrandaki "Bugünün hedefleri").
      * Seans başlatıldığında FitRepository.startWorkout aynı mantıkla setleri doldurur.
      */
-    fun planFor(dayId: Long): List<Pair<String, Prescription>> {
+    fun planFor(dayId: Long): List<Pair<String, Prescription>> =
+        planItems(dayId).map { (item, rx) -> item.customName.ifBlank { exerciseById(item.exerciseId)?.name ?: "" } to rx }
+
+    /** Program hareketi id → bir sonraki seansın önerisi (ağırlık + hedef tekrarlar). */
+    fun planByItem(dayId: Long): Map<Long, Prescription> = planItems(dayId).associate { (item, rx) -> item.id to rx }
+
+    private fun planItems(dayId: Long): List<Pair<RoutineItemEntity, Prescription>> {
         val items = allItems.value.filter { it.dayId == dayId }.sortedBy { it.orderIndex }
         val dayWorkouts = workouts.value.filter { it.isFinished && it.routineDayId == dayId }.associateBy { it.id }
         val lib = exercises.value.associateBy { it.id }
@@ -1188,8 +1194,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 .sortedByDescending { it.dateMillis }
                 .take(8)
-            val name = item.customName.ifBlank { ex.name }
-            name to ProgressionEngine.prescribe(
+            item to ProgressionEngine.prescribe(
                 history = sessions,
                 targetSets = maxOf(item.targetSets, sessions.firstOrNull()?.sets?.size ?: 0),
                 repMin = item.repMin,

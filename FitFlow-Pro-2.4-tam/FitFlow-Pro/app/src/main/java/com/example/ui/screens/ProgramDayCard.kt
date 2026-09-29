@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.example.core.LadderConfig
 import com.example.core.LadderMode
@@ -131,6 +132,8 @@ fun ProgramDayCard(
     val sets = work.sumOf { it.targetSets }
     val minutes = (8 + items.sumOf { it.targetSets * (it.restSeconds + 40) } / 60) / 5 * 5
     val chevron by animateFloatAsState(if (expanded) 180f else 0f, label = "chev")
+    val allSets by vm.allSets.collectAsStateWithLifecycle()
+    val plan = remember(items, ladderCfgs, allSets) { vm.planByItem(day.id) }
 
     fun start() {
         if (running != null && !isActiveDay) showBusy = true
@@ -223,6 +226,7 @@ fun ProgramDayCard(
                     item = it,
                     ex = ex,
                     cfg = ladderCfgs[it.id],
+                    rx = plan[it.id],
                     clickable = expanded,
                     onClick = { sheetItemId = it.id }
                 )
@@ -253,6 +257,7 @@ fun ProgramDayCard(
             item = item,
             ex = exerciseMap[item.exerciseId],
             cfg = ladderCfgs[item.id],
+            rx = plan[item.id],
             isFirst = items.firstOrNull()?.id == item.id,
             isLast = items.lastOrNull()?.id == item.id,
             onRequestCombine = { itemToCombine = item },
@@ -328,15 +333,30 @@ fun ProgramDayCard(
 
 /** Kart içindeki tek hareket satırı: renk noktası, ad, "3 × 6-7-8" ya da "3 × 8–12". */
 @Composable
-private fun ProgramItemRow(item: RoutineItemEntity, ex: ExerciseEntity?, cfg: LadderConfig?, clickable: Boolean, onClick: () -> Unit) {
+private fun ProgramItemRow(
+    item: RoutineItemEntity,
+    ex: ExerciseEntity?,
+    cfg: LadderConfig?,
+    rx: com.example.core.Prescription?,
+    clickable: Boolean,
+    onClick: () -> Unit
+) {
     val isDuration = ex?.trackingType == ExerciseEntity.TRACK_DURATION
     val spec = ex?.let { Ladders.resolve(cfg, it.name, it.muscleGroup, it.equipment, it.trackingType) }
-    val right = when {
+    // Bir sonraki seansın önerisi varsa onu göster (ağırlık + hedef tekrarlar); yoksa programdaki hedef.
+    val reps = when {
         isDuration -> "${item.targetSets} × ${item.repMin} sn"
+        rx != null && rx.action != com.example.core.ProgressAction.FIRST -> rx.repTargets.joinToString("-")
         spec != null -> "${item.targetSets} × ${spec.targets(0, item.targetSets).joinToString("-")}"
         item.repMin == item.repMax -> "${item.targetSets} × ${item.repMin}"
         else -> "${item.targetSets} × ${item.repMin}–${item.repMax}"
     }
+    val kg = when {
+        isDuration -> 0f
+        rx != null && rx.weight > 0f -> rx.weight
+        else -> item.targetWeight
+    }
+    val right = if (kg > 0f) "${kg.trimNum()} kg · $reps" else reps
     Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).then(if (clickable) Modifier.clickable { onClick() } else Modifier)
@@ -365,6 +385,7 @@ private fun ProgramItemSheet(
     item: RoutineItemEntity,
     ex: ExerciseEntity?,
     cfg: LadderConfig?,
+    rx: com.example.core.Prescription?,
     isFirst: Boolean,
     isLast: Boolean,
     onRequestCombine: () -> Unit,
@@ -402,6 +423,28 @@ private fun ProgramItemSheet(
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted
                     )
+                }
+            }
+
+            /* Bir sonraki seans önerisi + başlangıç ağırlığı */
+            if (!isDuration) {
+                val hasHistory = rx != null && rx.action != com.example.core.ProgressAction.FIRST
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.fit.accent.copy(alpha = 0.10f)).padding(12.dp)
+                ) {
+                    OverlineText("Sıradaki seans", color = MaterialTheme.fit.accent)
+                    Spacer(Modifier.height(4.dp))
+                    if (hasHistory && rx != null) {
+                        Text(rx.headline, style = MaterialTheme.typography.titleLarge.mono().copy(fontWeight = FontWeight.SemiBold))
+                        Text(rx.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                    } else {
+                        Text("Henüz bu günde kayıt yok — ilk seans ağırlığını gir:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                        Spacer(Modifier.height(6.dp))
+                        NumberField("Başlangıç ağırlığı (kg)", item.targetWeight.takeIf { it > 0f }?.trimNum() ?: "") {
+                            vm.updateItem(item.copy(targetWeight = it.replace(',', '.').toFloatOrNull() ?: 0f))
+                        }
+                    }
                 }
             }
 
@@ -447,9 +490,6 @@ private fun ProgramItemSheet(
             AnimatedVisibility(showMore) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     FitTextField(name, { name = it; vm.updateItem(item.copy(customName = if (it == baseName) "" else it)) }, "Hareket adı (bu günde)")
-                    NumberField("Başlangıç kg (ilk seans için)", item.targetWeight.takeIf { it > 0f }?.trimNum() ?: "") {
-                        vm.updateItem(item.copy(targetWeight = it.replace(',', '.').toFloatOrNull() ?: 0f))
-                    }
                     FitTextField(item.note, { vm.updateItem(item.copy(note = it)) }, "Not (tempo, kavrama…)")
                     if (ex != null) {
                         FitTextField(ex.videoUrl, { vm.saveExercise(ex.copy(videoUrl = it.trim())) }, "Video linki")

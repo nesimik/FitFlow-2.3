@@ -98,6 +98,8 @@ import com.example.data.WorkoutSetEntity
 import com.example.ui.AppViewModel
 import com.example.ui.SessionReview
 import com.example.ui.components.AccentButton
+import androidx.compose.material.icons.filled.Healing
+import com.example.ui.components.FinishSessionDialog
 import com.example.ui.components.Badge
 import com.example.ui.components.CheckCircle
 import com.example.ui.components.ConfirmDialog
@@ -144,6 +146,8 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     var showFinish by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (vm.consumeFinishOnEnter()) showFinish = true }
     var showDiscard by remember { mutableStateOf(false) }
+    var showEndChoice by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
     var showTips by remember { mutableStateOf<SessionExercise?>(null) }
     var altFor by remember { mutableStateOf<SessionExercise?>(null) }
     /** Düzenlenen set: (hareket sırası, set id). Güncel veri her seferinde listeden okunur. */
@@ -194,8 +198,11 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
             done = doneSets,
             total = totalSets,
             onMinimize = { nav.popBackStack() },
-            onFinish = { showFinish = true },
-            onDiscard = { showDiscard = true }
+            onFinish = { showEndChoice = true },
+            onAddExercise = { showPicker = true },
+            onAddSuperset = { showSupersetPicker = true },
+            onRename = { showRename = true },
+            onToggleDeload = { vm.setWorkoutDeload(workout!!.id, !workout!!.isDeload) }
         )
 
         LazyColumn(
@@ -347,6 +354,33 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
         )
     }
 
+    if (showEndChoice) {
+        FinishSessionDialog(
+            title = workout!!.title,
+            summary = "${formatDuration(elapsed)} · $doneSets/$totalSets set tamamlandı",
+            onSave = { showEndChoice = false; showFinish = true },
+            onDiscard = { showEndChoice = false; vm.discardWorkout { nav.popBackStack() } },
+            onDismiss = { showEndChoice = false }
+        )
+    }
+
+    if (showRename) {
+        var t by remember { mutableStateOf(workout!!.title) }
+        AlertDialog(
+            onDismissRequest = { showRename = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Seans adı", style = MaterialTheme.typography.titleLarge) },
+            text = { FitTextField(t, { t = it }, "Ad") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (t.isNotBlank()) vm.updateWorkout(workout!!.copy(title = t.trim()))
+                    showRename = false
+                }) { Text("Kaydet", color = MaterialTheme.fit.accent) }
+            },
+            dismissButton = { TextButton(onClick = { showRename = false }) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
+        )
+    }
+
     if (showDiscard) {
         ConfirmDialog(
             title = "Seansı kaydetmeden sonlandır",
@@ -443,7 +477,10 @@ private fun SessionTopBar(
     total: Int,
     onMinimize: () -> Unit,
     onFinish: () -> Unit,
-    onDiscard: () -> Unit
+    onAddExercise: () -> Unit,
+    onAddSuperset: () -> Unit,
+    onRename: () -> Unit,
+    onToggleDeload: () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
     Column(Modifier.background(MaterialTheme.colorScheme.background)) {
@@ -476,9 +513,24 @@ private fun SessionTopBar(
                 RoundIconButton(Icons.Default.MoreVert, MaterialTheme.fit.muted, 40.dp, Color.Transparent) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
-                        text = { Text("Kaydetmeden sil") },
-                        onClick = { menu = false; onDiscard() },
-                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.fit.danger) }
+                        text = { Text("Hareket ekle") },
+                        onClick = { menu = false; onAddExercise() },
+                        leadingIcon = { Icon(Icons.Default.Add, null, tint = MaterialTheme.fit.accent) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Süperset ekle") },
+                        onClick = { menu = false; onAddSuperset() },
+                        leadingIcon = { Icon(Icons.Default.Bolt, null, tint = Palette.warning) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Seans adını değiştir") },
+                        onClick = { menu = false; onRename() },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isDeload) "Deload işaretini kaldır" else "Deload seansı olarak işaretle") },
+                        onClick = { menu = false; onToggleDeload() },
+                        leadingIcon = { Icon(Icons.Default.Healing, null, tint = Palette.violet) }
                     )
                 }
             }
