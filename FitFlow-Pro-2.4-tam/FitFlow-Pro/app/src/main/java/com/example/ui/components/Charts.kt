@@ -378,41 +378,6 @@ fun ActivityHeatmap(
 
 /* ================================== Halka ==================================== */
 
-@Composable
-fun DonutChart(
-    items: List<DistributionItem>,
-    modifier: Modifier = Modifier,
-    size: Dp = 150.dp,
-    stroke: Dp = 22.dp,
-    center: @Composable () -> Unit = {}
-) {
-    val total = items.sumOf { it.value.toDouble() }.toFloat().coerceAtLeast(0.0001f)
-    val anim by animateFloatAsState(1f, tween(700), label = "donut")
-    val track = MaterialTheme.fit.elevated
-    Box(modifier.size(size), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(size)) {
-            val sw = stroke.toPx()
-            val inset = sw / 2f
-            val arcSize = Size(this.size.width - sw, this.size.height - sw)
-            drawArc(
-                color = track, startAngle = 0f, sweepAngle = 360f, useCenter = false,
-                topLeft = Offset(inset, inset), size = arcSize, style = Stroke(sw)
-            )
-            var start = -90f
-            items.forEach { item ->
-                val sweep = 360f * (item.value / total) * anim
-                drawArc(
-                    color = item.color, startAngle = start + 1f, sweepAngle = (sweep - 2f).coerceAtLeast(0f),
-                    useCenter = false, topLeft = Offset(inset, inset), size = arcSize,
-                    style = Stroke(sw, cap = StrokeCap.Round)
-                )
-                start += sweep
-            }
-        }
-        center()
-    }
-}
-
 /* ================================ Yer tutucu ================================= */
 
 @Composable
@@ -459,46 +424,3 @@ fun Sparkline(
 
 /* ============================== Haftalık şerit =============================== */
 
-@Composable
-fun WeekStrip(
-    doneWeekdays: Set<Int>,
-    todayWeekday: Int,
-    plannedWeekdays: Set<Int> = emptySet(),
-    modifier: Modifier = Modifier
-) {
-    val accent = MaterialTheme.fit.accent
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        (1..7).forEach { d ->
-            val done = doneWeekdays.contains(d)
-            val planned = plannedWeekdays.contains(d)
-            val isToday = d == todayWeekday
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                Text(
-                    com.example.core.weekdayShort(d),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isToday) accent else MaterialTheme.fit.muted
-                )
-                Spacer(Modifier.height(6.dp))
-                Box(
-                    Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            when {
-                                done -> accent
-                                planned -> accent.copy(alpha = 0.16f)
-                                else -> MaterialTheme.fit.elevated
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (done) "✓" else if (planned) "•" else "",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (done) MaterialTheme.fit.onAccent else accent
-                    )
-                }
-            }
-        }
-    }
-}

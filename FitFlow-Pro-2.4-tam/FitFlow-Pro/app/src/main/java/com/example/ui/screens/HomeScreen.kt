@@ -769,41 +769,6 @@ private fun WeekCard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>
 
 /* -------------------------------- Toparlanma -------------------------------- */
 
-@Composable
-private fun RecoveryCard(recovery: Map<String, MuscleRecovery>, todayConflicts: List<String>?, onClick: () -> Unit) {
-    val colors = remember(recovery) { recovery.filterValues { it.state != RecoveryState.FRESH }.mapValues { (_, r) -> MuscleColors.forReadiness(r.readiness) } }
-    val notReady = recovery.values.filter { it.state != RecoveryState.FRESH }.sortedBy { it.readiness }
-    FitCard(onClick = onClick, contentPadding = PaddingValues(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Toparlanma", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
-            when {
-                todayConflicts == null -> Unit
-                todayConflicts.isEmpty() -> Text("Bugünkü programa engel yok", style = MaterialTheme.typography.labelMedium, color = MuscleColors.fresh)
-                else -> Text("⚠ ${todayConflicts.joinToString(", ")}", style = MaterialTheme.typography.labelMedium, color = MuscleColors.recovering, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        BodyMuscleMapPair(colors = colors, height = 220.dp, showLabels = false)
-        Spacer(Modifier.height(8.dp))
-        if (notReady.isEmpty()) {
-            Text("Tüm kasların toparlanmış görünüyor.", style = MaterialTheme.typography.bodySmall, color = MuscleColors.fresh)
-        } else {
-            notReady.take(3).forEach { r ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(MuscleColors.forReadiness(r.readiness).copy(alpha = 1f)))
-                    Spacer(Modifier.width(8.dp))
-                    Text(MuscleMap.label(r.key), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    Text(
-                        "%${(r.readiness * 100).toInt()} · ${readyText(r.readyAt)}",
-                        style = MaterialTheme.typography.labelMedium.mono(),
-                        color = MaterialTheme.fit.muted
-                    )
-                }
-            }
-        }
-    }
-}
-
 /* ------------------------------- Hızlı erişim ------------------------------- */
 
 @Composable
@@ -1079,79 +1044,6 @@ private fun RecentWorkoutsCard(
 }
 
 /* ------------------------------- Son antrenman ------------------------------- */
-
-@Composable
-private fun LastWorkoutCard(
-    workout: WorkoutEntity,
-    previous: WorkoutEntity?,
-    sets: List<WorkoutSetEntity>,
-    prCount: Int,
-    onOpen: () -> Unit,
-    onHistory: () -> Unit
-) {
-    val mine = sets.filter { it.workoutId == workout.id && Analytics.isEffectiveSet(it) }
-    val vol = mine.sumOf { it.load.toDouble() }.toFloat()
-    val prevVol = previous?.let { p ->
-        sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { it.load.toDouble() }.toFloat()
-    } ?: 0f
-    val delta = if (prevVol > 0f) Math.round((vol - prevVol) / prevVol * 100f) else null
-    val minutes = (workout.durationSeconds.takeIf { it > 0 }
-        ?: workout.finishedAt?.let { ((it - workout.startedAt) / 1000L).toInt() } ?: 0) / 60
-
-    FitCard(onClick = onOpen, contentPadding = PaddingValues(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.fit.elevated),
-                contentAlignment = Alignment.Center
-            ) { Icon(Icons.Default.History, null, tint = MaterialTheme.fit.muted, modifier = Modifier.size(22.dp)) }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    workout.title + " · " + formatWeekday(workout.startedAt),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Row {
-                    Text(
-                        listOfNotNull(
-                            if (minutes > 0) "$minutes dk" else null,
-                            "${mine.size} set",
-                            formatTonnage(vol)
-                        ).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.fit.muted
-                    )
-                    if (delta != null) {
-                        Text(
-                            " · ${if (delta >= 0) "+" else ""}%$delta hacim",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (delta >= 0) MaterialTheme.fit.success else MaterialTheme.fit.warning
-                        )
-                    }
-                }
-            }
-            if (prCount > 0) {
-                Surface(shape = RoundedCornerShape(8.dp), color = Palette.gold.copy(alpha = 0.15f)) {
-                    Text(
-                        "$prCount PR",
-                        style = MaterialTheme.typography.labelMedium.mono().copy(fontWeight = FontWeight.Bold),
-                        color = Palette.gold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Tüm geçmiş →",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.fit.accent,
-            textAlign = TextAlign.End,
-            modifier = Modifier.fillMaxWidth().clickable { onHistory() }
-        )
-    }
-}
 
 /* --------------------------------- Yardımcılar ------------------------------- */
 

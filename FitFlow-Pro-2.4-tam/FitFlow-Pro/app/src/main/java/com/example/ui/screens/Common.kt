@@ -194,34 +194,6 @@ fun ExercisePickerDialog(
     ExerciseBrowserDialog(vm = vm, title = title, multi = false, excludeIds = excludeIds, onPick = onPick, onDismiss = onDismiss)
 }
 
-@Composable
-private fun ExercisePickRow(ex: ExerciseEntity, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }
-    ) {
-        Row(
-            Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            MuscleAvatar(ex.muscleGroup)
-            Column(Modifier.weight(1f)) {
-                Text(ex.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    "${ex.muscleGroup} · ${ex.equipment}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.fit.muted,
-                    maxLines = 1
-                )
-            }
-            if (ex.isFavorite) Text("★", color = MaterialTheme.fit.gold)
-            Icon(Icons.Default.Add, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(20.dp))
-        }
-    }
-}
-
 /* --------------------------- Hareket oluştur / düzenle --------------------------- */
 
 fun autoDetectMuscleGroup(name: String): String? {

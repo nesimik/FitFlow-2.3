@@ -428,26 +428,6 @@ private fun BodyTile(label: String, value: String, modifier: Modifier) {
 }
 
 @Composable
-private fun GoalRow(label: String, value: String, progress: Float) {
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
-            Text(value, style = MaterialTheme.typography.labelLarge.mono(), color = MaterialTheme.fit.muted, maxLines = 1)
-        }
-        Spacer(Modifier.height(8.dp))
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(MaterialTheme.fit.elevated)) {
-            Box(
-                Modifier
-                    .fillMaxWidth(progress.coerceIn(0f, 1f))
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.fit.accent)
-            )
-        }
-    }
-}
-
-@Composable
 internal fun SettingRow(
     icon: ImageVector,
     label: String,
@@ -519,27 +499,6 @@ private fun GoalsDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
     )
-}
-
-@Composable
-fun NavRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
-    FitCard(onClick = onClick, contentPadding = PaddingValues(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(13.dp))
-                    .background(MaterialTheme.fit.accent.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) { Icon(icon, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(19.dp)) }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, maxLines = 1)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.fit.muted)
-        }
-    }
 }
 
 @Composable

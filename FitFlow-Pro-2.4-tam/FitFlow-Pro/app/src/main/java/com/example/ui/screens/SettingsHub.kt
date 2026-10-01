@@ -657,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.33" to "Dambıl hacmi iki dambılla sayılır; seansta anında PR rozeti, geri al, kalan setlere uygula, süperset turları, hareket bazlı dinlenme, drop/tükeniş seti, hareket sırası, dinlenme duraklatma ve büyük sayaç; geçmişten seansı tekrarla.",
     "2.32" to "Hesap denetimi: işaretlenmeyen setler artık kaydedilmez, 1,25 kg adımı düzeltildi, sahte plato/gerileme ve yanlış aşırı yüklenme uyarıları giderildi, deload kıyaslardan çıkarıldı, makine squat/bench güç seviyesine sayılmaz.",
     "2.31" to "Güç özeti düzeltmesi: deadlift yoksa RDL toplama katılır; her kaldırışın en iyi seti ve 1RM dökümü gösterilir.",
     "2.30" to "Deload haftası: kartlar ve seans deload set/ağırlıklarını gösterir, öneriler son normal haftaya göre hesaplanır. Uygulama içinden güncelleme (indir ve kur).",

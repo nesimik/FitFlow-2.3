@@ -1325,42 +1325,6 @@ private fun StrengthTab(vm: AppViewModel, nav: NavHostController) {
     }
 }
 
-@Composable
-private fun LiftStandardCard(lift: LiftStandard, nav: NavHostController) {
-    val levelColor = when (lift.levelIndex) {
-        0 -> MaterialTheme.fit.muted
-        1 -> MaterialTheme.fit.accent.copy(alpha = 0.7f)
-        2 -> MaterialTheme.fit.accent
-        3 -> MaterialTheme.fit.success
-        4 -> Palette.violet
-        else -> MaterialTheme.fit.gold
-    }
-    FitCard(onClick = { nav.navigate("${Routes.EXERCISE}/${lift.exerciseId}") }) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(lift.displayName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "${lift.e1rm.kg()} · vücut ağırlığının ${lift.bodyweightRatio.trimNum()} katı",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.fit.muted
-                )
-            }
-            Badge(lift.level, levelColor, filled = lift.levelIndex >= 3)
-        }
-        if (lift.nextLevel != null && lift.nextLevelWeight > lift.e1rm) {
-            Spacer(Modifier.height(12.dp))
-            val span = lift.nextLevelWeight
-            ThinProgress((lift.e1rm / span).coerceIn(0f, 1f), color = levelColor, height = 6.dp)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "${lift.nextLevel} seviyesine ${(lift.nextLevelWeight - lift.e1rm).kg()} kaldı",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.fit.muted
-            )
-        }
-    }
-}
-
 /** Squat'a göre lift oranları: çubuk gerçek oran, beyaz çizgi beklenen oran. */
 @Composable
 private fun LiftBalanceCard(balance: List<com.example.core.LiftBalanceItem>) {
@@ -1503,28 +1467,6 @@ private fun RecordsTab(vm: AppViewModel, nav: NavHostController) {
 /* ============================== Yardımcı parçalar ========================== */
 
 @Composable
-private fun CompareCell(label: String, current: String, previous: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.fit.elevated)
-            .padding(vertical = 11.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
-        Spacer(Modifier.height(4.dp))
-        Text(current, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-        Text(
-            "önce $previous",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.fit.muted,
-            maxLines = 1,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
 private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier
@@ -1551,36 +1493,6 @@ private fun InfoNote(text: String) {
     ) {
         Icon(Icons.Default.Info, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(14.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
-    }
-}
-
-@Composable
-private fun InsightRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(tint.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = tint, modifier = Modifier.size(16.dp)) }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, maxLines = 1)
-        }
     }
 }
 

@@ -441,41 +441,6 @@ fun FitTextField(
     )
 }
 
-/** Ağırlık/tekrar gibi sayısal değerler için artı-eksi kontrollü alan. */
-@Composable
-fun StepperField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    onStep: (Float) -> Unit,
-    step: Float,
-    modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.fit.accent
-) {
-    Column(modifier) {
-        OverlineText(label)
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RoundIconButton(Icons.Default.Remove, accent) { onStep(-step) }
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.titleLarge.copy(textAlign = TextAlign.Center),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = accent,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    cursorColor = accent
-                )
-            )
-            RoundIconButton(Icons.Default.Add, accent) { onStep(step) }
-        }
-    }
-}
-
 @Composable
 fun RoundIconButton(
     icon: ImageVector,
