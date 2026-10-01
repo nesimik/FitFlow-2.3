@@ -338,7 +338,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             }
                             ?.sortedBy { it.setNumber }
                             ?: emptyList()
-                        val item = dayItems.find { it.orderIndex == order } ?: dayItems.getOrNull(order)
+                        // 2.34: önce aynı sıradaki aynı hareket, sonra aynı hareket (sıra değişmiş olabilir), sonra sıra
+                        val item = dayItems.find { it.orderIndex == order && it.exerciseId == exId }
+                            ?: dayItems.firstOrNull { it.exerciseId == exId }
+                            ?: dayItems.find { it.orderIndex == order } ?: dayItems.getOrNull(order)
                         val sGroup = sets.firstOrNull()?.supersetGroup?.takeIf { it > 0 } ?: item?.supersetGroup ?: 0
                         val tracking = ex?.trackingType ?: ExerciseEntity.TRACK_WEIGHT_REPS
                         val exIsWarmup = sets.firstOrNull()?.isWarmup ?: (item?.isWarmup == true)
@@ -671,13 +674,51 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /* ---------------------- Seans araçları (2.33) ---------------------- */
     fun restoreSets(sets: List<WorkoutSetEntity>) = viewModelScope.launch { repo.restoreSets(sets) }
 
+    /** Program sırası seanstan değiştiğinde önceki sıra (geri al için). */
+    private val _programReordered = kotlinx.coroutines.flow.MutableSharedFlow<Pair<Long, Map<Long, Int>>>(extraBufferCapacity = 1)
+    val programReordered: kotlinx.coroutines.flow.SharedFlow<Pair<Long, Map<Long, Int>>> = _programReordered
+
+    /**
+     * 2.34: Seansta hareketi taşı. Süperset bloğu birlikte taşınır. Program günüyse programdaki
+     * sıra da aynı şekilde güncellenir (seans kaydedilmese bile kalıcı); geri al için önceki sıra yayınlanır.
+     */
     fun moveSessionExercise(order: Int, up: Boolean) {
         val w = activeWorkout.value ?: return
-        val orders = sessionExercises.value.map { it.order }.sorted()
-        val i = orders.indexOf(order)
-        val j = if (up) i - 1 else i + 1
-        if (i < 0 || j !in orders.indices) return
-        viewModelScope.launch { repo.swapExerciseOrder(w.id, order, orders[j]) }
+        val list = sessionExercises.value.sortedBy { it.order }
+        val blocks = mutableListOf<MutableList<SessionExercise>>()
+        list.forEach { se ->
+            val last = blocks.lastOrNull()
+            if (last != null && se.supersetGroup > 0 && last.first().supersetGroup == se.supersetGroup) last.add(se)
+            else blocks.add(mutableListOf(se))
+        }
+        val bi = blocks.indexOfFirst { b -> b.any { it.order == order } }
+        val bj = if (up) bi - 1 else bi + 1
+        if (bi < 0 || bj !in blocks.indices) return
+        java.util.Collections.swap(blocks, bi, bj)
+        val newSeq = blocks.flatten()
+        val slots = list.map { it.order }
+        val mapping = newSeq.mapIndexed { i, se -> se.order to slots[i] }.toMap()
+        viewModelScope.launch {
+            repo.remapExerciseOrders(w.id, mapping)
+            val dayId = w.routineDayId ?: return@launch
+            val dayItems = allItems.value.filter { it.dayId == dayId }
+            val before = dayItems.associate { it.id to it.orderIndex }
+            val seqItems = newSeq.mapNotNull { se -> se.routineItemId?.let { id -> dayItems.firstOrNull { it.id == id } } }.distinctBy { it.id }
+            val itemSlots = seqItems.map { it.orderIndex }.sorted()
+            val changes = seqItems.mapIndexed { i, it -> it.id to itemSlots[i] }.filter { (id, o) -> before[id] != o }.toMap()
+            if (changes.isNotEmpty()) {
+                repo.setItemOrders(dayId, changes)
+                _programReordered.tryEmit(dayId to before)
+            }
+        }
+    }
+
+    fun restoreItemOrders(dayId: Long, orders: Map<Long, Int>) = viewModelScope.launch { repo.setItemOrders(dayId, orders) }
+
+    /** Program hareketini geri getir (silmeyi geri al) — merdiven ayarıyla birlikte. */
+    fun restoreItem(item: RoutineItemEntity, ladder: com.example.core.LadderConfig?) = viewModelScope.launch {
+        repo.restoreItem(item)
+        if (ladder != null) settings.setLadderConfig(item.id, ladder)
     }
 
     /** Bu seans için hareket bazlı dinlenme (sıra → sn). */

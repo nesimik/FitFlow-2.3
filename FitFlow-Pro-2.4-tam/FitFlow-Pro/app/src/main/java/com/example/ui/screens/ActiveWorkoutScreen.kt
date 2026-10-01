@@ -175,6 +175,14 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     /** Düzenlenen set: (hareket sırası, set id). Güncel veri her seferinde listeden okunur. */
     var editing by remember { mutableStateOf<Pair<Int, Long>?>(null) }
 
+    // Seansta sıra değişince program da güncellenir; o günlük değişiklikse geri alınabilir.
+    LaunchedEffect(Unit) {
+        vm.programReordered.collect { (dayId, before) ->
+            snackbar.currentSnackbarData?.dismiss()
+            val r = snackbar.showSnackbar("Program sırası da güncellendi", actionLabel = "Geri al", duration = androidx.compose.material3.SnackbarDuration.Long)
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.restoreItemOrders(dayId, before)
+        }
+    }
     val listState = rememberLazyListState()
     var highlightedId by remember { mutableStateOf<Long?>(null) }
 

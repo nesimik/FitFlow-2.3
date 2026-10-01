@@ -785,11 +785,28 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
             }
     }
 
-    /** Seanstaki iki hareketin sırasını değiştirir (2.33). */
-    suspend fun swapExerciseOrder(workoutId: Long, a: Int, b: Int) {
-        val all = dao.setsForWorkout(workoutId)
-        all.filter { it.exerciseOrder == a }.forEach { dao.updateSet(it.copy(exerciseOrder = b)) }
-        all.filter { it.exerciseOrder == b }.forEach { dao.updateSet(it.copy(exerciseOrder = a)) }
+    /** Seans hareketlerinin sırasını eski → yeni eşlemesiyle değiştirir (2.34). */
+    suspend fun remapExerciseOrders(workoutId: Long, mapping: Map<Int, Int>) {
+        dao.setsForWorkout(workoutId).forEach { st ->
+            val n = mapping[st.exerciseOrder] ?: return@forEach
+            if (n != st.exerciseOrder) dao.updateSet(st.copy(exerciseOrder = n))
+        }
+    }
+
+    /** Program hareketlerine doğrudan sıra yazar (normalize etmeden). */
+    suspend fun setItemOrders(dayId: Long, orders: Map<Long, Int>) {
+        dao.itemsForDay(dayId).forEach { it ->
+            val o = orders[it.id] ?: return@forEach
+            if (o != it.orderIndex) dao.updateItem(it.copy(orderIndex = o))
+        }
+    }
+
+    /** Silinen program hareketini geri ekler. */
+    suspend fun restoreItem(item: RoutineItemEntity) {
+        val others = dao.itemsForDay(item.dayId).filter { it.id != item.id }.sortedBy { it.orderIndex }.toMutableList()
+        dao.insertItem(item)
+        others.add(item.orderIndex.coerceIn(0, others.size), item)
+        others.forEachIndexed { i, e -> if (e.orderIndex != i) dao.updateItem(e.copy(orderIndex = i)) }
     }
 
     /** Geçmiş seansı yeni bir seans olarak başlatır: aynı hareketler, aynı değerler, işaretlenmemiş (2.33). */

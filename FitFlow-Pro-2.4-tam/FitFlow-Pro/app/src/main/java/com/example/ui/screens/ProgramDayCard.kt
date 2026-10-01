@@ -28,6 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.foundation.layout.fillMaxSize
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -129,6 +133,7 @@ fun ProgramDayCard(
     var itemToDelete by remember { mutableStateOf<RoutineItemEntity?>(null) }
     var showFinish by remember { mutableStateOf(false) }
     var showBusy by remember { mutableStateOf(false) }
+    var editorOpen by remember { mutableStateOf(false) }
 
     val running = activeWorkout?.takeIf { !it.isFinished }
     val isActiveDay = running != null && running.routineDayId == day.id
@@ -196,7 +201,7 @@ fun ProgramDayCard(
             Box {
                 RoundIconButton(Icons.Default.MoreVert, MaterialTheme.fit.muted, 34.dp, Color.Transparent) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Günü düzenle") }, onClick = { menu = false; onEditDay() }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                    DropdownMenuItem(text = { Text("Günü düzenle") }, onClick = { menu = false; editorOpen = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
                     DropdownMenuItem(text = { Text("Geçmiş seans ile değiştir") }, onClick = { menu = false; onReplaceFromHistory() }, leadingIcon = { Icon(Icons.Default.History, null) })
                     DropdownMenuItem(text = { Text("Kopyala") }, onClick = { menu = false; onDuplicate() }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) })
                     DropdownMenuItem(text = { Text("Sil") }, onClick = { menu = false; onDelete() }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.fit.danger) })
@@ -249,6 +254,22 @@ fun ProgramDayCard(
                 }
             }
         }
+    }
+
+    /* ------------------------------ Gün düzenleyici (2.34) ------------------------------ */
+    if (editorOpen) {
+        DayEditor(
+            vm = vm,
+            day = day,
+            items = items,
+            exerciseMap = exerciseMap,
+            ladderCfgs = ladderCfgs,
+            plan = plan,
+            onOpenItem = { sheetItemId = it },
+            onAdd = { showPicker = true },
+            onAddSuperset = { showSupersetPicker = true },
+            onClose = { editorOpen = false }
+        )
     }
 
     /* ------------------------------ Paneller ------------------------------ */
@@ -722,6 +743,142 @@ private fun ActiveSessionStrip(elapsed: String, done: Int, total: Int, onResume:
                 Spacer(Modifier.width(6.dp))
                 Text("Bitir", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.danger)
             }
+        }
+    }
+}
+
+
+/* ------------------------------ Gün düzenleyici ------------------------------ */
+
+/**
+ * Tam sayfa gün düzenleyici: ad, odak, haftanın günü + hareket listesi (sıra, silme/geri al).
+ * Harekete dokununca programdaki hareket paneli açılır (tüm ayarlar).
+ */
+@Composable
+private fun DayEditor(
+    vm: AppViewModel,
+    day: RoutineDayEntity,
+    items: List<RoutineItemEntity>,
+    exerciseMap: Map<Long, ExerciseEntity>,
+    ladderCfgs: Map<Long, LadderConfig>,
+    plan: Map<Long, com.example.core.Prescription>,
+    onOpenItem: (Long) -> Unit,
+    onAdd: () -> Unit,
+    onAddSuperset: () -> Unit,
+    onClose: () -> Unit
+) {
+    var name by remember(day.id) { mutableStateOf(day.name) }
+    var focus by remember(day.id) { mutableStateOf(day.focus) }
+    var weekday by remember(day.id) { mutableStateOf(day.weekday) }
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val sorted = items.sortedBy { it.orderIndex }
+
+    fun saveAndClose() {
+        if (name.isNotBlank() && (name.trim() != day.name || focus.trim() != day.focus || weekday != day.weekday)) {
+            vm.updateDay(day.copy(name = name.trim(), focus = focus.trim(), weekday = weekday))
+        }
+        onClose()
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { saveAndClose() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Column(Modifier.fillMaxSize()) {
+                ScreenHeader("Günü düzenle", day.name, onBack = { saveAndClose() }) {
+                    Text(
+                        "Bitti", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.accent,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { saveAndClose() }.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+                androidx.compose.foundation.lazy.LazyColumn(
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 140.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item(key = "head") {
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).cardBackground()
+                                .border(1.dp, MaterialTheme.fit.cardBorder, RoundedCornerShape(20.dp)).padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            FitTextField(name, { name = it }, "Gün adı", placeholder = "Örn: A Günü / Push")
+                            FitTextField(focus, { focus = it }, "Odak", placeholder = "Örn: Göğüs, Omuz, Triceps")
+                            OverlineText("Haftanın günü")
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ChoiceChip("Serbest", weekday == 0, { weekday = 0 })
+                                (1..7).forEach { d -> ChoiceChip(WEEKDAY_SHORT[d - 1], weekday == d, { weekday = d }) }
+                            }
+                        }
+                    }
+                    item(key = "listhead") {
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OverlineText("Hareketler · ${sorted.size}", modifier = Modifier.weight(1f))
+                            Text("dokun: ayarlar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                        }
+                    }
+                    if (sorted.isEmpty()) item(key = "empty") {
+                        Text("Bu günde hareket yok. Aşağıdan ekleyebilirsin.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                    }
+                    sorted.forEachIndexed { i, it ->
+                        item(key = "it_${it.id}") {
+                            val ex = exerciseMap[it.exerciseId]
+                            val rx = plan[it.id]
+                            val kg = rx?.weight?.takeIf { w -> w > 0f } ?: it.targetWeight
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
+                                    .border(1.dp, if (it.supersetGroup > 0) Palette.warning.copy(alpha = 0.4f) else MaterialTheme.fit.cardBorder, RoundedCornerShape(16.dp))
+                                    .clickable { onOpenItem(it.id) }.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("${i + 1}", style = MaterialTheme.typography.labelLarge.mono(), color = MaterialTheme.fit.muted, modifier = Modifier.width(22.dp))
+                                Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.muscle(ex?.muscleGroup ?: "Diğer")))
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        (if (it.supersetGroup > 0) "⚡ " else "") + it.customName.ifBlank { ex?.name ?: "?" },
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        listOfNotNull(
+                                            if (it.isWarmup) "Isınma" else null,
+                                            "${it.targetSets} × ${if (it.repMin == it.repMax) "${it.repMin}" else "${it.repMin}–${it.repMax}"}",
+                                            if (kg > 0f) "${kg.trimNum()} kg" else null,
+                                            "${it.restSeconds} sn"
+                                        ).joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, maxLines = 1
+                                    )
+                                }
+                                RoundIconButton(Icons.Default.KeyboardArrowUp, if (i > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted.copy(alpha = 0.3f), 34.dp, Color.Transparent) {
+                                    if (i > 0) vm.moveItem(day.id, it.id, true)
+                                }
+                                RoundIconButton(Icons.Default.KeyboardArrowDown, if (i < sorted.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.fit.muted.copy(alpha = 0.3f), 34.dp, Color.Transparent) {
+                                    if (i < sorted.lastIndex) vm.moveItem(day.id, it.id, false)
+                                }
+                                RoundIconButton(Icons.Default.Delete, MaterialTheme.fit.danger, 34.dp, Color.Transparent) {
+                                    val cfg = ladderCfgs[it.id]
+                                    val removed = it
+                                    vm.deleteItem(removed); vm.setLadderConfig(removed.id, null)
+                                    scope.launch {
+                                        snackbar.currentSnackbarData?.dismiss()
+                                        val r = snackbar.showSnackbar("${removed.customName.ifBlank { ex?.name ?: "Hareket" }} silindi", actionLabel = "Geri al",
+                                            duration = androidx.compose.material3.SnackbarDuration.Long)
+                                        if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.restoreItem(removed, cfg)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item(key = "add") {
+                        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GhostButton("Hareket ekle", onAdd, Modifier.weight(1f), Icons.Default.Add, MaterialTheme.fit.accent)
+                            GhostButton("Süperset ekle", onAddSuperset, Modifier.weight(1f), Icons.Default.Bolt, Palette.warning)
+                        }
+                    }
+                }
+            }
+            androidx.compose.material3.SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp))
         }
     }
 }
