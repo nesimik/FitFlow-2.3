@@ -46,6 +46,9 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material.icons.filled.TrendingFlat
 import androidx.compose.material.icons.filled.TrendingUp
@@ -111,6 +114,7 @@ import com.example.ui.components.ThinProgress
 import com.example.ui.theme.Palette
 import com.example.ui.theme.fit
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /* ==========================================================================
  * Aktif seans ekranı
@@ -121,6 +125,7 @@ import kotlinx.coroutines.delay
  *  - Sıradaki set vurgulanır; gereksiz rozet ve ikonlar ana akıştan çıkarıldı (hepsi ⋮ menüsünde).
  * ========================================================================== */
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     val workout by vm.activeWorkout.collectAsStateWithLifecycle()
@@ -138,14 +143,31 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
         LoadingProfile(bar, barStep, dbStep, machineStep, gymPlates, gymDumbbells)
     }
     val effort by vm.sessionEffort.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val priorBests by vm.priorBests.collectAsStateWithLifecycle()
+    val restOverrides by vm.restOverrides.collectAsStateWithLifecycle()
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var restFor by remember { mutableStateOf<SessionExercise?>(null) }
+    fun effRest(se: SessionExercise) = restOverrides[se.order] ?: se.restSeconds
+    fun isPr(set: WorkoutSetEntity): Boolean {
+        if (set.isWarmup || set.weightKg <= 0f || set.reps !in 1..12) return false
+        val b = priorBests[set.exerciseId] ?: return false
+        return com.example.core.Calc.e1rm(set.weightKg, set.reps) > b.first + 0.05f || set.weightKg > b.second + 0.01f
+    }
+    fun undo(msg: String, action: () -> Unit) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val r = snackbar.showSnackbar(msg, actionLabel = "Geri al", duration = androidx.compose.material3.SnackbarDuration.Short)
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) action()
+        }
+    }
 
     var showPicker by remember { mutableStateOf(false) }
     var showSupersetPicker by remember { mutableStateOf(false) }
     var exerciseToCombine by remember { mutableStateOf<SessionExercise?>(null) }
     var showFinish by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (vm.consumeFinishOnEnter()) showFinish = true }
-    var showDiscard by remember { mutableStateOf(false) }
     var showEndChoice by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showTips by remember { mutableStateOf<SessionExercise?>(null) }
@@ -183,7 +205,27 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
     val doneSets = exercises.sumOf { it.completedSets }
     val volume = exercises.sumOf { it.volume.toDouble() }.toFloat()
     // Sıradaki set: ilk tamamlanmamış set (üstten aşağı).
-    val nextSetId = exercises.asSequence().flatMap { it.sets.asSequence() }.firstOrNull { !it.isCompleted }?.id
+    // Süperset: setler tur tur sıralanır (A1 → B1 → A2 → B2 …).
+    val roundOrder: List<WorkoutSetEntity> = remember(exercises) {
+        val seen = HashSet<Int>()
+        buildList {
+            exercises.forEach { se ->
+                if (se.supersetGroup <= 0) addAll(se.sets)
+                else if (seen.add(se.supersetGroup)) {
+                    val members = exercises.filter { it.supersetGroup == se.supersetGroup }
+                    val rounds = members.maxOf { it.sets.size }
+                    for (r in 0 until rounds) members.forEach { m -> m.sets.getOrNull(r)?.let { add(it) } }
+                }
+            }
+        }
+    }
+    val nextSetId = roundOrder.firstOrNull { !it.isCompleted }?.id
+    /** Süpersette dinlenme yalnızca turun son hareketinden sonra. */
+    fun restAfter(se: SessionExercise): Int {
+        if (se.supersetGroup <= 0) return effRest(se)
+        val last = exercises.filter { it.supersetGroup == se.supersetGroup }.maxOf { it.order }
+        return if (se.order == last) effRest(se) else 0
+    }
     // Dambıl / makinede ısınma yalnızca o kas grubunun seanstaki ilk hareketinde önerilir.
     val firstOfMuscle = remember(exercises) {
         exercises.filter { !it.isWarmup }.groupBy { it.muscleGroup }.values.map { it.first().order }.toSet()
@@ -205,6 +247,7 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
             onToggleDeload = { vm.setWorkoutDeload(workout!!.id, !workout!!.isDeload) }
         )
 
+        androidx.compose.material3.SnackbarHost(snackbar, Modifier.fillMaxWidth())
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -227,23 +270,37 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                     nextSetId = nextSetId,
                     fallbackSuggestion = if (se.prescription == null) vm.suggestionFor(se) else "",
                     isHighlighted = highlightedId == se.exerciseId,
+                    restSeconds = effRest(se),
+                    isPr = ::isPr,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < exercises.lastIndex,
+                    onMove = { up -> vm.moveSessionExercise(se.order, up) },
+                    onEditRest = { restFor = se },
                     onToggleSet = { set ->
                         if (se.trackingType == ExerciseEntity.TRACK_DURATION) {
-                            vm.toggleTimedSetDone(set, set.durationSeconds, se.restSeconds)
+                            vm.toggleTimedSetDone(set, set.durationSeconds, restAfter(se))
                         } else {
-                            vm.toggleSetDone(set, se.restSeconds)
+                            vm.toggleSetDone(set, restAfter(se))
+                            if (!set.isCompleted && isPr(set)) {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                scope.launch { snackbar.showSnackbar("🏆 Yeni rekor: ${se.name} ${set.weightKg.trimNum()} kg × ${set.reps}") }
+                            }
                         }
                     },
                     onEditSet = { set -> editing = se.order to set.id },
                     onUpdateSet = vm::updateSet,
-                    onDeleteSet = vm::deleteSet,
+                    onDeleteSet = { set -> vm.deleteSet(set); undo("Set silindi") { vm.restoreSets(listOf(set)) } },
                     onAddSet = { vm.addSetRow(se.order, se.exerciseId) },
-                    onRemoveExercise = { vm.removeExerciseFromSession(se.order) },
+                    onRemoveExercise = {
+                        val removed = se.sets
+                        vm.removeExerciseFromSession(se.order)
+                        undo("${se.name} çıkarıldı") { vm.restoreSets(removed) }
+                    },
                     onToggleWarmup = { vm.toggleExerciseWarmup(se.order, !se.isWarmup) },
                     onRequestCombine = { exerciseToCombine = se },
                     onSeparateSuperset = { vm.setSessionExerciseSuperset(se.order, 0) },
                     onDissolveSuperset = { group -> vm.dissolveSessionSuperset(group) },
-                    onStartRest = { vm.startRest(se.restSeconds, se.name, se.exerciseId) },
+                    onStartRest = { vm.startRest(effRest(se), se.name, se.exerciseId) },
                     onShowTips = { showTips = se },
                     onRequestAlternatives = { altFor = se },
                     onRenameExercise = { newName ->
@@ -300,13 +357,18 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                 set = set,
                 profile = profile,
                 onDismiss = { editing = null },
-                onSave = { updated -> vm.updateSet(updated); editing = null },
+                onSave = { updated, applyRest ->
+                    vm.updateSet(updated)
+                    if (applyRest) se.sets.filter { !it.isCompleted && !it.isWarmup && it.setNumber > updated.setNumber }
+                        .forEach { vm.updateSet(it.copy(weightKg = updated.weightKg)) }
+                    editing = null
+                },
                 onSaveAndComplete = { updated ->
                     if (updated.isCompleted) vm.updateSet(updated)
                     else if (se.trackingType == ExerciseEntity.TRACK_DURATION) {
                         vm.updateSet(updated)
-                        vm.toggleTimedSetDone(updated, updated.durationSeconds, se.restSeconds)
-                    } else vm.toggleSetDone(updated, se.restSeconds)
+                        vm.toggleTimedSetDone(updated, updated.durationSeconds, restAfter(se))
+                    } else vm.toggleSetDone(updated, restAfter(se))
                     editing = null
                 }
             )
@@ -381,20 +443,6 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
         )
     }
 
-    if (showDiscard) {
-        ConfirmDialog(
-            title = "Seansı kaydetmeden sonlandır",
-            text = "Bu antrenman kaydedilmeden silinecek. Emin misin?",
-            confirmLabel = "Kaydetmeden Çık",
-            destructive = true,
-            onConfirm = {
-                showDiscard = false
-                vm.discardWorkout { nav.popBackStack() }
-            },
-            onDismiss = { showDiscard = false }
-        )
-    }
-
     if (showFinish) {
         val review = remember(exercises) { vm.sessionReview() }
         FinishDialog(
@@ -407,6 +455,47 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
                 showFinish = false
                 vm.finishWorkout(notes, feeling, keep) { nav.popBackStack() }
             }
+        )
+    }
+
+    restFor?.let { se ->
+        var sec by remember(se.order) { mutableStateOf(effRest(se)) }
+        var save by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { restFor = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Dinlenme · ${se.name}", style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(formatDuration(sec), style = MaterialTheme.typography.displaySmall.mono(), color = MaterialTheme.fit.accent)
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(45, 60, 75, 90, 120, 150, 180, 240, 300).forEach { v ->
+                            Text(
+                                if (v < 60) "$v sn" else if (v % 60 == 0) "${v / 60} dk" else "${v / 60}:${(v % 60).toString().padStart(2, '0')}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (sec == v) MaterialTheme.fit.onAccent else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                                    .background(if (sec == v) MaterialTheme.fit.accent else MaterialTheme.fit.elevated)
+                                    .clickable { sec = v }.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                    if (se.routineItemId != null) {
+                        Row(Modifier.fillMaxWidth().clickable { save = !save }, verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(checked = save, onCheckedChange = { save = it })
+                            Text("Programa da kaydet", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.setSessionRest(se.order, sec, if (save) se.routineItemId else null); restFor = null }) {
+                    Text("Uygula", color = MaterialTheme.fit.accent)
+                }
+            },
+            dismissButton = { TextButton(onClick = { restFor = null }) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
         )
     }
 
@@ -575,6 +664,12 @@ private fun ExerciseLogCard(
     nextSetId: Long?,
     fallbackSuggestion: String,
     isHighlighted: Boolean = false,
+    restSeconds: Int = se.restSeconds,
+    isPr: (WorkoutSetEntity) -> Boolean = { false },
+    canMoveUp: Boolean = false,
+    canMoveDown: Boolean = false,
+    onMove: (Boolean) -> Unit = {},
+    onEditRest: () -> Unit = {},
     onToggleSet: (WorkoutSetEntity) -> Unit,
     onEditSet: (WorkoutSetEntity) -> Unit,
     onUpdateSet: (WorkoutSetEntity) -> Unit,
@@ -707,17 +802,28 @@ private fun ExerciseLogCard(
                     if (isInSuperset) Badge("SS ${se.supersetGroup}", Palette.warning)
                     if (se.isWarmup) Badge("Isınma", Palette.warning)
                     Text(
-                        if (isDuration) "Dinlenme ${se.restSeconds} sn"
-                        else se.prescription?.let { rx ->
-                            (se.ladder?.let { "${it.label}${if (it.reverse) " ↓" else ""} · " } ?: "") + "${rx.repMin}-${rx.repMax} tekrar · ${se.restSeconds} sn"
-                        } ?: "${se.targetRepMin}-${se.targetRepMax} tekrar · ${se.restSeconds} sn",
+                        if (isDuration) "" else se.prescription?.let { rx ->
+                            (se.ladder?.let { "${it.label}${if (it.reverse) " ↓" else ""} · " } ?: "") + "${rx.repMin}-${rx.repMax} tekrar"
+                        } ?: "${se.targetRepMin}-${se.targetRepMax} tekrar",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.fit.muted,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (se.note.isNotBlank()) {
-                        Text("📝 ${se.note}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.accent, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // Dinlenme: dokununca bu seans için değiştir
+                    Row(
+                        Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.fit.elevated).clickable { onEditRest() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Timer, null, tint = MaterialTheme.fit.muted, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("$restSeconds sn", style = MaterialTheme.typography.labelSmall.mono(), color = MaterialTheme.fit.muted)
                     }
+                }
+                if (se.note.isNotBlank()) {
+                    Text("📝 ${se.note}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.accent, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Text(
@@ -766,10 +872,20 @@ private fun ExerciseLogCard(
                             leadingIcon = { Icon(Icons.Default.Link, null) }
                         )
                     }
+                    if (canMoveUp) DropdownMenuItem(
+                        text = { Text("Yukarı taşı") },
+                        onClick = { menu = false; onMove(true) },
+                        leadingIcon = { Icon(Icons.Default.ArrowUpward, null) }
+                    )
+                    if (canMoveDown) DropdownMenuItem(
+                        text = { Text("Aşağı taşı") },
+                        onClick = { menu = false; onMove(false) },
+                        leadingIcon = { Icon(Icons.Default.ArrowDownward, null) }
+                    )
                     DropdownMenuItem(
                         text = { Text(if (se.isWarmup) "Ana harekete çevir" else "Isınma hareketine çevir") },
                         onClick = { menu = false; onToggleWarmup() },
-                        leadingIcon = { Icon(Icons.Default.Lightbulb, null) }
+                        leadingIcon = { Icon(Icons.Default.Whatshot, null) }
                     )
                     if (se.completedSets == 0 && !se.isWarmup) {
                         DropdownMenuItem(
@@ -853,6 +969,7 @@ private fun ExerciseLogCard(
                 set = set,
                 previous = prevSet,
                 isNext = set.id == nextSetId,
+                isPr = set.isCompleted && isPr(set),
                 isDuration = isDuration,
                 isRepsOnly = isRepsOnly,
                 onToggle = {
@@ -1063,6 +1180,7 @@ private fun SetRow(
     set: WorkoutSetEntity,
     previous: WorkoutSetEntity?,
     isNext: Boolean,
+    isPr: Boolean = false,
     isDuration: Boolean,
     isRepsOnly: Boolean,
     onToggle: () -> Unit,
@@ -1122,10 +1240,17 @@ private fun SetRow(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (set.isWarmup) "W" else "${set.setNumber}",
+                    when {
+                        set.isWarmup -> "W"
+                        set.setType == WorkoutSetEntity.TYPE_DROP -> "D"
+                        set.setType == WorkoutSetEntity.TYPE_FAILURE -> "F"
+                        else -> "${set.setNumber}"
+                    },
                     style = MaterialTheme.typography.labelLarge.mono().copy(fontWeight = FontWeight.SemiBold),
                     color = when {
                         set.isWarmup -> Palette.warning
+                        set.setType == WorkoutSetEntity.TYPE_DROP -> Palette.violet
+                        set.setType == WorkoutSetEntity.TYPE_FAILURE -> MaterialTheme.fit.danger
                         set.isCompleted -> MaterialTheme.fit.success
                         isNext -> accent
                         else -> MaterialTheme.fit.muted
@@ -1135,8 +1260,24 @@ private fun SetRow(
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (set.isWarmup) "Çalışma seti yap" else "Isınma seti yap") },
-                    onClick = { menu = false; onUpdate(set.copy(isWarmup = !set.isWarmup)) }
+                    onClick = { menu = false; onUpdate(set.copy(isWarmup = !set.isWarmup, setType = WorkoutSetEntity.TYPE_NORMAL)) }
                 )
+                if (!set.isWarmup) {
+                    DropdownMenuItem(
+                        text = { Text(if (set.setType == WorkoutSetEntity.TYPE_DROP) "Normal set yap" else "Drop set (D)") },
+                        onClick = {
+                            menu = false
+                            onUpdate(set.copy(setType = if (set.setType == WorkoutSetEntity.TYPE_DROP) WorkoutSetEntity.TYPE_NORMAL else WorkoutSetEntity.TYPE_DROP))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (set.setType == WorkoutSetEntity.TYPE_FAILURE) "Normal set yap" else "Tükeniş seti (F)") },
+                        onClick = {
+                            menu = false
+                            onUpdate(set.copy(setType = if (set.setType == WorkoutSetEntity.TYPE_FAILURE) WorkoutSetEntity.TYPE_NORMAL else WorkoutSetEntity.TYPE_FAILURE))
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Seti sil") },
                     onClick = { menu = false; if (set.isCompleted) askDelete = true else onDelete() },
@@ -1174,6 +1315,14 @@ private fun SetRow(
 
         Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
             CheckCircle(set.isCompleted, onToggle, size = 42.dp)
+            if (isPr) {
+                Text(
+                    "PR", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+                    color = Color(0xFF2A1F00),
+                    modifier = Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.fit.gold)
+                        .padding(horizontal = 3.dp, vertical = 1.dp)
+                )
+            }
         }
     }
 }
@@ -1222,9 +1371,11 @@ private fun SetEditorSheet(
     set: WorkoutSetEntity,
     profile: LoadingProfile,
     onDismiss: () -> Unit,
-    onSave: (WorkoutSetEntity) -> Unit,
+    onSave: (WorkoutSetEntity, Boolean) -> Unit,
     onSaveAndComplete: (WorkoutSetEntity) -> Unit
 ) {
+    val laterSets = se.sets.count { !it.isCompleted && !it.isWarmup && it.setNumber > set.setNumber }
+    var applyRest by remember(set.id) { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val isDuration = se.trackingType == ExerciseEntity.TRACK_DURATION
     val isRepsOnly = se.trackingType == ExerciseEntity.TRACK_REPS
@@ -1358,10 +1509,20 @@ private fun SetEditorSheet(
                 Text(rpeMeaning(rpe), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
             }
 
+            if (laterSets > 0 && !isDuration && !isRepsOnly && !set.isWarmup) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.fit.elevated)
+                        .clickable { applyRest = !applyRest }.padding(end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(checked = applyRest, onCheckedChange = { applyRest = it })
+                    Text("Bu ağırlığı kalan $laterSets sete de uygula", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GhostButton("Kaydet", { onSave(build()) }, Modifier.weight(1f))
+                if (!set.isCompleted) GhostButton("Kaydet", { onSave(build(), applyRest) }, Modifier.weight(1f))
                 AccentButton(
-                    if (set.isCompleted) "Güncelle" else "Tamamla",
+                    if (set.isCompleted) "Kaydet" else "Tamamla",
                     { onSaveAndComplete(build()) },
                     Modifier.weight(1.4f),
                     icon = Icons.Default.Check,

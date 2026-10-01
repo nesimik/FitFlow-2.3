@@ -57,7 +57,7 @@ object Analytics {
         val byWorkout = validSets.groupBy { it.workoutId }
 
         fun volumeOf(w: WorkoutEntity): Float =
-            byWorkout[w.id]?.sumOf { (it.weightKg * it.reps).toDouble() }?.toFloat() ?: 0f
+            byWorkout[w.id]?.sumOf { it.load.toDouble() }?.toFloat() ?: 0f
 
         fun setCountOf(w: WorkoutEntity): Int = byWorkout[w.id]?.size ?: 0
 
@@ -65,7 +65,7 @@ object Analytics {
         // 2.32: yarım haftayı tam haftayla kıyaslamamak için geçen haftanın AYNI ANINA kadar olan kısmı
         val lastWeek = workouts.filter { it.isFinished && it.startedAt in prevWeekStart until (now - 7 * 86_400_000L) }
 
-        val totalVolume = validSets.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+        val totalVolume = validSets.sumOf { it.load.toDouble() }.toFloat()
         val last = workouts.maxByOrNull { it.startedAt }
 
         return DashboardStats(
@@ -138,7 +138,7 @@ object Analytics {
             PeriodPoint(
                 startMillis = start,
                 label = formatDateShort(start),
-                volume = s.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat(),
+                volume = s.sumOf { it.load.toDouble() }.toFloat(),
                 sets = s.size,
                 reps = s.sumOf { it.reps },
                 workouts = ws.size,
@@ -179,7 +179,7 @@ object Analytics {
             PeriodPoint(
                 startMillis = start,
                 label = SimpleMonth.short(start),
-                volume = s.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat(),
+                volume = s.sumOf { it.load.toDouble() }.toFloat(),
                 sets = s.size,
                 reps = s.sumOf { it.reps },
                 workouts = ws.size,
@@ -207,7 +207,7 @@ object Analytics {
                 MuscleVolume(
                     muscleGroup = group,
                     sets = list.size,
-                    volume = list.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+                    volume = list.sumOf { it.load.toDouble() }.toFloat()
                 )
             }
             .sortedByDescending { it.sets }
@@ -222,7 +222,7 @@ object Analytics {
                     dateMillis = list.minOf { it.performedAt },
                     topWeight = list.maxOf { it.weightKg },
                     e1rm = list.maxOf { Calc.e1rm(it.weightKg, it.reps) },
-                    volume = list.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat(),
+                    volume = list.sumOf { it.load.toDouble() }.toFloat(),
                     totalReps = list.sumOf { it.reps },
                     sets = list.size
                 )
@@ -241,7 +241,7 @@ object Analytics {
         val volumeByDay = HashMap<Long, Float>()
         workouts.forEach { w ->
             val day = startOfDay(w.startedAt)
-            val v = byWorkout[w.id]?.sumOf { (it.weightKg * it.reps).toDouble() }?.toFloat() ?: 0f
+            val v = byWorkout[w.id]?.sumOf { it.load.toDouble() }?.toFloat() ?: 0f
             volumeByDay[day] = (volumeByDay[day] ?: 0f) + maxOf(v, 1f)
         }
         val maxV = volumeByDay.values.maxOrNull() ?: 1f
@@ -326,5 +326,5 @@ object Analytics {
     /** Bir seansın toplam hacmi. */
     fun workoutVolume(workoutId: Long, sets: List<WorkoutSetEntity>): Float =
         sets.filter { it.workoutId == workoutId && isEffectiveSet(it) }
-            .sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+            .sumOf { it.load.toDouble() }.toFloat()
 }

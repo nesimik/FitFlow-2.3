@@ -379,7 +379,7 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
     }
     val bestWeight = sets.maxOfOrNull { it.weightKg } ?: 0f
     val bestE1rm = sets.maxOfOrNull { Calc.e1rm(it.weightKg, it.reps) } ?: 0f
-    val totalVolume = sets.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+    val totalVolume = sets.sumOf { it.load.toDouble() }.toFloat()
     val level = Calc.strengthLevel(ex.muscleGroup, Calc.strengthRatio(bestE1rm, bodyWeight))
 
     // Programdaki yeri ve sıradaki seansın reçetesi

@@ -262,7 +262,7 @@ object Reminders {
 
         fun volumeIn(from: Long, to: Long): Float {
             val ids = workouts.filter { it.startedAt in from until to }.map { it.id }.toHashSet()
-            return sets.filter { it.workoutId in ids && it.isCompleted && !it.isWarmup }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+            return sets.filter { it.workoutId in ids && it.isCompleted && !it.isWarmup }.sumOf { it.load.toDouble() }.toFloat()
         }
         val sessions = workouts.count { it.startedAt in lastWeek until thisWeek }
         if (sessions == 0 && workouts.none { it.startedAt >= lastWeek - 3 * week }) {

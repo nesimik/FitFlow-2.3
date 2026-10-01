@@ -243,7 +243,7 @@ object Calc {
 
     /** Toplam hacim (tonaj) */
     fun volume(sets: List<com.example.data.WorkoutSetEntity>): Float =
-        sets.filter { it.isCompleted && !it.isWarmup }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+        sets.filter { it.isCompleted && !it.isWarmup }.sumOf { it.load.toDouble() }.toFloat()
 
     /** Wilks benzeri basitleştirilmiş güç skoru: kaldırılan / vücut ağırlığı */
     fun strengthRatio(lift: Float, bodyWeight: Float): Float =

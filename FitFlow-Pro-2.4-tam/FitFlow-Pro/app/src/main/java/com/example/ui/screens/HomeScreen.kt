@@ -542,9 +542,9 @@ private fun DoneHero(
 ) {
     val c = MaterialTheme.fit.success
     val mine = sets.filter { it.workoutId == workout.id && Analytics.isEffectiveSet(it) }
-    val vol = mine.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+    val vol = mine.sumOf { it.load.toDouble() }.toFloat()
     val prevVol = previous?.let { p ->
-        sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+        sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { it.load.toDouble() }.toFloat()
     } ?: 0f
     val delta = if (prevVol > 0f) Math.round((vol - prevVol) / prevVol * 100f) else null
     val minutes = (workout.durationSeconds.takeIf { it > 0 }
@@ -699,7 +699,7 @@ private fun WeekCard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>
     val done = weekWorkouts.map { weekdayOf(it.startedAt) }.toSet()
     val ids = weekWorkouts.map { it.id }.toSet()
     val volume = sets.filter { it.workoutId in ids && Analytics.isEffectiveSet(it) }
-        .sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+        .sumOf { it.load.toDouble() }.toFloat()
     val goal = planned.size.takeIf { it > 0 } ?: 3
 
     FitCard(contentPadding = PaddingValues(16.dp)) {
@@ -1013,12 +1013,12 @@ private fun RecentWorkoutsCard(
         recent.forEachIndexed { i, w ->
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
             val mine = sets.filter { it.workoutId == w.id && Analytics.isEffectiveSet(it) }
-            val vol = mine.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+            val vol = mine.sumOf { it.load.toDouble() }.toFloat()
             val prev = if (w.isDeload) null else all.filter {
                 it.isFinished && !it.isDeload && it.id != w.id && it.startedAt < w.startedAt && w.routineDayId != null && it.routineDayId == w.routineDayId
             }.maxByOrNull { it.startedAt }
             val prevVol = prev?.let { p ->
-                sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+                sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { it.load.toDouble() }.toFloat()
             } ?: 0f
             val delta = if (prevVol > 0f) Math.round((vol - prevVol) / prevVol * 100f) else null
             val minutes = (w.durationSeconds.takeIf { it > 0 }
@@ -1090,9 +1090,9 @@ private fun LastWorkoutCard(
     onHistory: () -> Unit
 ) {
     val mine = sets.filter { it.workoutId == workout.id && Analytics.isEffectiveSet(it) }
-    val vol = mine.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+    val vol = mine.sumOf { it.load.toDouble() }.toFloat()
     val prevVol = previous?.let { p ->
-        sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+        sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { it.load.toDouble() }.toFloat()
     } ?: 0f
     val delta = if (prevVol > 0f) Math.round((vol - prevVol) / prevVol * 100f) else null
     val minutes = (workout.durationSeconds.takeIf { it > 0 }
@@ -1329,7 +1329,7 @@ private fun SummaryCard(
         val cur = done.filter { it.startedAt >= from }
         val prev = done.filter { it.startedAt in prevFrom until from }
         val byW = sets.filter { Analytics.isEffectiveSet(it) }.groupBy { it.workoutId }
-        fun vol(ws: List<WorkoutEntity>) = ws.sumOf { w -> byW[w.id].orEmpty().sumOf { (it.weightKg * it.reps).toDouble() } }.toFloat()
+        fun vol(ws: List<WorkoutEntity>) = ws.sumOf { w -> byW[w.id].orEmpty().sumOf { it.load.toDouble() } }.toFloat()
         fun mins(ws: List<WorkoutEntity>) = ws.map { w ->
             (w.durationSeconds.takeIf { it > 0 } ?: w.finishedAt?.let { ((it - w.startedAt) / 1000L).toInt() } ?: 0) / 60
         }.filter { it > 0 }.let { if (it.isEmpty()) 0 else it.average().toInt() }

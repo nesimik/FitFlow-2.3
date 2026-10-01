@@ -429,7 +429,7 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                     val daySets = dao.lastNormalSetsForExerciseInDay(dayId, item.exerciseId)
                         .ifEmpty { dao.lastSetsForExerciseInDay(dayId, item.exerciseId) }
                     val sessions = daySets
-                        .filter { !it.isWarmup && it.reps > 0 }
+                        .filter { !it.isWarmup && it.reps > 0 && it.setType != WorkoutSetEntity.TYPE_DROP }
                         .groupBy { it.workoutId }
                         .values
                         .map { ws ->
@@ -771,6 +771,38 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         }
     }
 
+    /** Geri al: silinen setleri geri ekler ve set numaralarını yeniden sıralar (2.33). */
+    suspend fun restoreSets(sets: List<WorkoutSetEntity>) {
+        if (sets.isEmpty()) return
+        val wid = sets.first().workoutId
+        val restoredIds = sets.map { it.id }.toSet()
+        sets.forEach { dao.insertSet(it) }
+        dao.setsForWorkout(wid).filter { st -> sets.any { it.exerciseOrder == st.exerciseOrder } }
+            .groupBy { it.exerciseOrder }
+            .forEach { (_, l) ->
+                l.sortedWith(compareBy<WorkoutSetEntity> { it.setNumber }.thenBy { if (it.id in restoredIds) 0 else 1 })
+                    .forEachIndexed { i, st -> if (st.setNumber != i + 1) dao.updateSet(st.copy(setNumber = i + 1)) }
+            }
+    }
+
+    /** Seanstaki iki hareketin sırasını değiştirir (2.33). */
+    suspend fun swapExerciseOrder(workoutId: Long, a: Int, b: Int) {
+        val all = dao.setsForWorkout(workoutId)
+        all.filter { it.exerciseOrder == a }.forEach { dao.updateSet(it.copy(exerciseOrder = b)) }
+        all.filter { it.exerciseOrder == b }.forEach { dao.updateSet(it.copy(exerciseOrder = a)) }
+    }
+
+    /** Geçmiş seansı yeni bir seans olarak başlatır: aynı hareketler, aynı değerler, işaretlenmemiş (2.33). */
+    suspend fun repeatWorkout(sourceId: Long, profile: com.example.core.LoadingProfile): Long {
+        val src = dao.workoutById(sourceId) ?: return 0L
+        val newId = startWorkout(dayId = null, title = src.title.replace(" (Deload)", ""), routineName = src.routineName, profile = profile)
+        val srcSets = dao.setsForWorkout(sourceId).sortedWith(compareBy({ it.exerciseOrder }, { it.setNumber }))
+        dao.insertSets(srcSets.map {
+            it.copy(id = 0, workoutId = newId, isCompleted = false, rpe = 0f, performedAt = System.currentTimeMillis())
+        })
+        return newId
+    }
+
     suspend fun removeExerciseFromWorkout(workoutId: Long, exerciseOrder: Int) {
         val sets = dao.setsForWorkout(workoutId).filter { it.exerciseOrder == exerciseOrder }
         sets.forEach { dao.deleteSet(it) }
@@ -823,9 +855,9 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                 val bestE1rm = exSets.maxOf { Calc.e1rm(it.weightKg, it.reps) }
                 val prevE1rm = history.maxOfOrNull { Calc.e1rm(it.weightKg, it.reps) } ?: 0f
 
-                val sessionVolume = exSets.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+                val sessionVolume = exSets.sumOf { it.load.toDouble() }.toFloat()
                 val prevVolume = history.groupBy { it.workoutId }
-                    .map { (_, l) -> l.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat() }
+                    .map { (_, l) -> l.sumOf { it.load.toDouble() }.toFloat() }
                     .maxOrNull() ?: 0f
 
                 val name = exSets.first().exerciseName

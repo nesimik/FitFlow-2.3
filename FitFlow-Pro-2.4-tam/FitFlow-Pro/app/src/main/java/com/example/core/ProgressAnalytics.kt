@@ -186,7 +186,7 @@ object ProgressAnalytics {
             val act = MuscleMap.resolve(s.exerciseName, ex?.muscleGroup ?: "", ex?.secondaryMuscles ?: "")
             val weights = act.weights()
             if (weights.isEmpty()) return@forEach
-            val vol = s.weightKg * s.reps
+            val vol = s.load
             weights.forEach { (muscle, w) ->
                 if (s.performedAt >= sinceMillis) {
                     setAcc[muscle] = (setAcc[muscle] ?: 0f) + w
@@ -229,7 +229,7 @@ object ProgressAnalytics {
             val w = MuscleMap.resolve(s.exerciseName, ex?.muscleGroup ?: "", ex?.secondaryMuscles ?: "")
                 .weights()[MuscleMap.CHEST] ?: return@forEach
             val (u, l) = MuscleMap.chestSplit(s.exerciseName)
-            val vol = s.weightKg * s.reps
+            val vol = s.load
             if (s.performedAt >= sinceMillis) {
                 upper += w * u; lower += w * l
                 upperVol += vol * w * u; lowerVol += vol * w * l
@@ -301,7 +301,7 @@ object ProgressAnalytics {
                 val performedCount = exSets.size
                 val divisor = if (periodWeeks <= 0f) 1f else periodWeeks
                 val effective = (performedCount * weight) / divisor
-                val vol = exSets.sumOf { (it.weightKg * it.reps * weight).toDouble() }.toFloat() / divisor
+                val vol = exSets.sumOf { (it.load * weight).toDouble() }.toFloat() / divisor
                 val lastDate = exSets.maxOfOrNull { it.performedAt } ?: 0L
                 val plan = routinePlanMap[ex.id] ?: emptyList()
 
@@ -335,7 +335,7 @@ object ProgressAnalytics {
                     val performedCount = exSets.size
                     val divisor = if (periodWeeks <= 0f) 1f else periodWeeks
                     val effective = (performedCount * weight) / divisor
-                    val vol = exSets.sumOf { (it.weightKg * it.reps * weight).toDouble() }.toFloat() / divisor
+                    val vol = exSets.sumOf { (it.load * weight).toDouble() }.toFloat() / divisor
                     val lastDate = exSets.maxOfOrNull { it.performedAt } ?: 0L
                     result.add(
                         MuscleContributor(
@@ -373,7 +373,7 @@ object ProgressAnalytics {
             val to = now - toDaysAgo * DAY
             return workouts.filter { it.startedAt in from..to }
                 .sumOf { w ->
-                    (byWorkout[w.id] ?: emptyList()).sumOf { (it.weightKg * it.reps).toDouble() }
+                    (byWorkout[w.id] ?: emptyList()).sumOf { it.load.toDouble() }
                 }.toFloat()
         }
 

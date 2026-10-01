@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Event
@@ -441,6 +442,9 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
         if (vm.allSets.value.none { it.workoutId == workoutId }) editMode = true
     }
     var askEdit by remember { mutableStateOf(false) }
+    var askRepeat by remember { mutableStateOf(false) }
+    val activeW by vm.activeWorkout.collectAsStateWithLifecycle()
+    fun repeatNow() = vm.repeatWorkout(workoutId) { id -> nav.navigate("${Routes.WORKOUT}/$id") }
     var exToDelete by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var setToDelete by remember { mutableStateOf<WorkoutSetEntity?>(null) }
 
@@ -535,6 +539,14 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                     Text(if (editMode) "Bitti" else "Düzenle", style = MaterialTheme.typography.labelLarge, color = if (editMode) Palette.warning else MaterialTheme.fit.accent)
                 }
             }
+            item(key = "repeat") {
+                GhostButton(
+                    text = "Bu seansı tekrarla",
+                    icon = Icons.Default.Replay,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { if (activeW != null && activeW?.isFinished == false) askRepeat = true else repeatNow() }
+                )
+            }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatTile("Süre", formatDuration(w.durationSeconds), Modifier.weight(1f))
@@ -604,7 +616,7 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                                     "${exSets.count { Analytics.isEffectiveSet(it) }} set · ${exSets.sumOf { it.durationSeconds }} sn"
                                 } else {
                                     "${exSets.count { Analytics.isEffectiveSet(it) }} set · " +
-                                        formatTonnage(exSets.filter { Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat())
+                                        formatTonnage(exSets.filter { Analytics.isEffectiveSet(it) }.sumOf { it.load.toDouble() }.toFloat())
                                 }
                                 Text(
                                     summaryText,
@@ -676,6 +688,15 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
         )
     }
 
+    if (askRepeat) {
+        ConfirmDialog(
+            title = "Açık seans var",
+            text = "Şu an açık bir seans var. Yeni seans başlarken o seans kapatılır (işaretlediğin setler kaydedilir). Devam edilsin mi?",
+            confirmLabel = "Başlat",
+            onConfirm = { askRepeat = false; repeatNow() },
+            onDismiss = { askRepeat = false }
+        )
+    }
     if (askEdit) {
         ConfirmDialog(
             title = "Geçmiş kaydı düzenle",
@@ -743,7 +764,7 @@ private fun SetDetailEditRow(
             Text(
                 when {
                     isDuration -> "${set.durationSeconds} sn"
-                    set.weightKg > 0f -> "${set.weightKg.trimNum()} kg × ${set.reps}"
+                    set.weightKg > 0f -> "${com.example.core.VolumeRules.label(set.exerciseId, set.exerciseName, set.weightKg)} × ${set.reps}"
                     else -> "${set.reps} tekrar"
                 },
                 style = MaterialTheme.typography.bodyMedium.mono(), modifier = Modifier.weight(1f)

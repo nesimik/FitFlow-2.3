@@ -670,10 +670,13 @@ private fun BottomBar(current: String, onSelect: (String) -> Unit) {
 private fun RestTimerBar(
     state: RestTimerState,
     onAdjust: (Int) -> Unit,
-    @Suppress("UNUSED_PARAMETER") onToggle: () -> Unit,
+    onToggle: () -> Unit,
     onStop: () -> Unit,
     onClick: (() -> Unit)? = null
 ) {
+    // 2.33: duraklat / devam ve uzaktan okunur büyük geri sayım
+    var big by remember { mutableStateOf(false) }
+    if (big && !state.finished) BigRestDialog(state, onAdjust, onToggle, onStop) { big = false }
     // Tasarım 1d: koyu yüzey, soldan dolan ince ilerleme zemini, büyük mono sayaç, −15 / +15 / Atla.
     val accent = if (state.finished) MaterialTheme.fit.success else MaterialTheme.fit.accent
     val shape = RoundedCornerShape(22.dp)
@@ -703,9 +706,9 @@ private fun RestTimerBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable(enabled = !state.finished) { big = true }) {
                     Text(
-                        if (state.finished) "DİNLENME BİTTİ" else "DİNLENME",
+                        if (state.finished) "DİNLENME BİTTİ" else if (!state.running) "DURAKLATILDI" else "DİNLENME",
                         style = MaterialTheme.typography.labelSmall.overline(),
                         color = accent
                     )
@@ -720,6 +723,7 @@ private fun RestTimerBar(
                 if (!state.finished) {
                     SmallPill("−15") { onAdjust(-15) }
                     SmallPill("+15") { onAdjust(15) }
+                    SmallPill(if (state.running) "❚❚" else "▶") { onToggle() }
                 }
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -981,6 +985,53 @@ private fun LockScreen(check: (String) -> Boolean, biometric: Boolean, onUnlock:
                     }
                 }
             }
+        }
+    }
+}
+
+
+/** Tam ekran dinlenme sayacı: büyük halka ve rakamlar (telefon uzaktayken okunur). */
+@Composable
+private fun BigRestDialog(
+    state: RestTimerState,
+    onAdjust: (Int) -> Unit,
+    onToggle: () -> Unit,
+    onStop: () -> Unit,
+    onClose: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        val accent = MaterialTheme.fit.accent
+        Column(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clickable { onClose() }.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(if (state.running) "DİNLENME" else "DURAKLATILDI", style = MaterialTheme.typography.titleMedium, color = accent)
+            if (state.label.isNotBlank()) Text(state.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted)
+            Spacer(Modifier.height(24.dp))
+            ProgressRing(progress = state.progress, size = 280.dp, stroke = 14.dp, color = accent) {
+                Text(
+                    formatDuration(state.remaining),
+                    style = MaterialTheme.typography.displayLarge.mono().copy(fontWeight = FontWeight.SemiBold, fontSize = androidx.compose.ui.unit.TextUnit(72f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            Spacer(Modifier.height(32.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SmallPill("−15") { onAdjust(-15) }
+                SmallPill(if (state.running) "❚❚ Duraklat" else "▶ Devam") { onToggle() }
+                SmallPill("+15") { onAdjust(15) }
+            }
+            Spacer(Modifier.height(16.dp))
+            Surface(shape = RoundedCornerShape(16.dp), color = accent, modifier = Modifier.clickable { onStop(); onClose() }) {
+                Text("Atla", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.fit.onAccent,
+                    modifier = Modifier.padding(horizontal = 40.dp, vertical = 14.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("Küçültmek için dokun", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
         }
     }
 }

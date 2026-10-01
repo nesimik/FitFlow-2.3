@@ -344,7 +344,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         val exIsWarmup = sets.firstOrNull()?.isWarmup ?: (item?.isWarmup == true)
                         val normalPast = pastSets.filter { workoutMap[it.workoutId]?.isDeload != true }.ifEmpty { pastSets }
                         val rxHistory = normalPast
-                            .filter { !it.isWarmup && it.reps > 0 }
+                            .filter { !it.isWarmup && it.reps > 0 && it.setType != WorkoutSetEntity.TYPE_DROP }
                             .groupBy { it.workoutId }
                             .map { (wid, ws) ->
                                 SessionLog(
@@ -453,6 +453,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         checkUpdate()
+        viewModelScope.launch { exercises.collect { com.example.core.VolumeRules.update(it) } }
         // Kilit ekranı / bildirim düğmeleri: +30 sn ve Atla
         viewModelScope.launch {
             RestActionBus.events.collect { what ->
@@ -504,6 +505,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 ladderFor = { itemId -> settings.ladderFor(itemId) }
             )
             _elapsed.value = 0
+            _restOverrides.value = emptyMap()
             onStarted(id)
         }
     }
@@ -665,6 +667,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun addSetRowToWorkout(workoutId: Long, exerciseOrder: Int, exerciseId: Long) {
         viewModelScope.launch { repo.addSetRow(workoutId, exerciseOrder, exerciseId) }
     }
+
+    /* ---------------------- Seans araçları (2.33) ---------------------- */
+    fun restoreSets(sets: List<WorkoutSetEntity>) = viewModelScope.launch { repo.restoreSets(sets) }
+
+    fun moveSessionExercise(order: Int, up: Boolean) {
+        val w = activeWorkout.value ?: return
+        val orders = sessionExercises.value.map { it.order }.sorted()
+        val i = orders.indexOf(order)
+        val j = if (up) i - 1 else i + 1
+        if (i < 0 || j !in orders.indices) return
+        viewModelScope.launch { repo.swapExerciseOrder(w.id, order, orders[j]) }
+    }
+
+    /** Bu seans için hareket bazlı dinlenme (sıra → sn). */
+    private val _restOverrides = MutableStateFlow<Map<Int, Int>>(emptyMap())
+    val restOverrides: StateFlow<Map<Int, Int>> = _restOverrides
+    fun setSessionRest(order: Int, seconds: Int, saveToProgramItemId: Long?) {
+        _restOverrides.value = _restOverrides.value + (order to seconds)
+        if (saveToProgramItemId != null) {
+            allItems.value.firstOrNull { it.id == saveToProgramItemId }?.let { updateItem(it.copy(restSeconds = seconds)) }
+        }
+    }
+
+    fun repeatWorkout(sourceId: Long, onStarted: (Long) -> Unit) {
+        viewModelScope.launch {
+            _restOverrides.value = emptyMap()
+            val id = repo.repeatWorkout(sourceId, settings.loadingProfile())
+            _elapsed.value = 0
+            if (id > 0) onStarted(id)
+        }
+    }
+
+    /** Hareketin bu seans öncesi en iyi tahmini 1RM ve en ağır ağırlığı (anında rekor rozeti için). */
+    val priorBests: StateFlow<Map<Long, Pair<Float, Float>>> =
+        combine(allSets, workouts, activeWorkout) { s, ws, act ->
+            val finished = ws.filter { it.isFinished && !it.isDeload }.map { it.id }.toHashSet()
+            s.filter { it.workoutId in finished && it.workoutId != act?.id && Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..12 }
+                .groupBy { it.exerciseId }
+                .mapValues { (_, l) -> l.maxOf { com.example.core.Calc.e1rm(it.weightKg, it.reps) } to l.maxOf { it.weightKg } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun updateSet(set: WorkoutSetEntity) {
         viewModelScope.launch { repo.updateSet(set) }
@@ -1244,7 +1286,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val ex = lib[item.exerciseId] ?: return@mapNotNull null
             if (item.isWarmup || ex.trackingType == ExerciseEntity.TRACK_DURATION) return@mapNotNull null
             val sessions = sets
-                .filter { it.exerciseId == item.exerciseId && it.isCompleted && !it.isWarmup && it.reps > 0 && it.workoutId in dayWorkouts }
+                .filter { it.exerciseId == item.exerciseId && it.isCompleted && !it.isWarmup && it.reps > 0 && it.workoutId in dayWorkouts && it.setType != WorkoutSetEntity.TYPE_DROP }
                 .groupBy { it.workoutId }
                 .map { (wid, ws) ->
                     SessionLog(
@@ -1280,8 +1322,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val next = mutableListOf<Pair<String, Prescription>>()
         list.forEach { se ->
             val working = se.sets.filter { it.isCompleted && !it.isWarmup && it.reps > 0 }
-            volume += working.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
-            prevVolume += se.previous.filter { !it.isWarmup }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
+            volume += working.sumOf { it.load.toDouble() }.toFloat()
+            prevVolume += se.previous.filter { !it.isWarmup }.sumOf { it.load.toDouble() }.toFloat()
             if (se.prescription == null || working.isEmpty()) return@forEach
             val today = SessionLog(System.currentTimeMillis(), working.map { LoggedSet(it.weightKg, it.reps, it.rpe) })
             val rx = ProgressionEngine.prescribe(

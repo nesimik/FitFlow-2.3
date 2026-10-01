@@ -127,7 +127,10 @@ data class WorkoutSetEntity(
     }
 
     /** Bu setin hacmi (tonaj). Isınma setleri hacme dahil edilmez. */
-    val volume: Float get() = if (isWarmup) 0f else weightKg * reps
+    val volume: Float get() = if (isWarmup) 0f else load
+
+    /** Gerçekte kaldırılan iş: ağırlık × tekrar × dambıl çarpanı (2.33). */
+    val load: Float get() = weightKg * reps * com.example.core.VolumeRules.factor(exerciseId, exerciseName)
 }
 
 /** Kişisel rekor. Antrenman bitişinde otomatik hesaplanır. */
