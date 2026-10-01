@@ -14,8 +14,8 @@ android {
     applicationId = "com.nesimi.fitflow2"
     minSdk = 24
     targetSdk = 36
-    versionCode = 32
-    versionName = "2.30"
+    versionCode = 33
+    versionName = "2.31"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

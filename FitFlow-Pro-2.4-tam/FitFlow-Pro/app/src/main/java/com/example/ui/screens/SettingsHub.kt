@@ -657,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.31" to "Güç özeti düzeltmesi: deadlift yoksa RDL toplama katılır; her kaldırışın en iyi seti ve 1RM dökümü gösterilir.",
     "2.30" to "Deload haftası: kartlar ve seans deload set/ağırlıklarını gösterir, öneriler son normal haftaya göre hesaplanır. Uygulama içinden güncelleme (indir ve kur).",
     "2.29" to "Programdan çıkan ve 14 gündür yapılmayan hareketler ilerleme ekranlarında gizlenir; programa geri eklenince geçmişiyle birlikte döner. Yeni güç seviyesi merdiveni.",
     "2.28" to "Güç sekmesi: güç özeti, dönem seçmeli 1RM grafiği (rekor noktaları, eğilim), 1RM hedefi ve tahmini süre, tekrar–ağırlık tablosu, plato uyarıları. Kaslar: kas × hafta ısı haritası, program uyumu, kas detayında güç göstergesi.",

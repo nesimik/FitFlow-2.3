@@ -92,14 +92,20 @@ internal fun levelColor(idx: Int): Color = when (idx) {
 @Composable
 internal fun StrengthSummaryCard(profile: List<LiftStandard>, total: Float, bodyWeight: Float, change: Float?) {
     val gold = MaterialTheme.fit.gold
+    val parts = com.example.core.ProgressAnalytics.totalParts(profile)
+    val missing = listOfNotNull(
+        "squat".takeIf { parts.none { it.liftKey == "squat" } },
+        "bench press".takeIf { parts.none { it.liftKey == "bench" } },
+        "deadlift / RDL".takeIf { parts.none { it.liftKey == "deadlift" || it.liftKey == "rdl" } }
+    )
     FitCard(contentPadding = PaddingValues(16.dp)) {
-        OverlineText("Güç özeti")
+        OverlineText("Güç özeti · ana kaldırışlar toplamı")
         Spacer(Modifier.height(6.dp))
         if (total > 0f) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
                     Text(total.kg(), style = MaterialTheme.typography.displaySmall.mono().copy(fontWeight = FontWeight.SemiBold), color = gold)
-                    Text("Squat + Bench + Deadlift (tahmini 1RM)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                    Text(parts.joinToString(" + ") { shortName(it) } + " · tahmini 1RM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
                 }
                 if (bodyWeight > 0f) {
                     Column(horizontalAlignment = Alignment.End) {
@@ -108,6 +114,26 @@ internal fun StrengthSummaryCard(profile: List<LiftStandard>, total: Float, body
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            // Döküm: her kaldırışın en iyi seti ve ondan hesaplanan 1RM
+            parts.forEach { l ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(l.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "En iyi set: ${l.bestWeight.tr()} kg × ${l.bestReps}" + if (l.fromDumbbell) " (dambıl → barbell karşılığı)" else "",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted
+                        )
+                    }
+                    Text(l.e1rm.kg(), style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold), color = gold)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "1RM: tek tekrarda kaldırabileceğin tahmini en yüksek ağırlık. Set ağırlıklarının toplamı değildir; her kaldırışın en iyi setinden hesaplanır." +
+                    (if (missing.isNotEmpty()) " Eksik: ${missing.joinToString(", ")}." else ""),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted
+            )
             if (change != null) {
                 Spacer(Modifier.height(10.dp))
                 val c = if (change >= 0f) MaterialTheme.fit.success else MaterialTheme.fit.warning
@@ -121,9 +147,13 @@ internal fun StrengthSummaryCard(profile: List<LiftStandard>, total: Float, body
                 }
             }
         } else {
-            Text("Toplam için squat, bench ve deadlift kaydı gerekir.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+            Text("Toplam için squat, bench press ve deadlift (ya da RDL) kaydı gerekir.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
         }
     }
+}
+
+private fun shortName(l: LiftStandard) = when (l.liftKey) {
+    "squat" -> "Squat"; "bench" -> "Bench"; "deadlift" -> "Deadlift"; "rdl" -> "RDL"; else -> l.displayName
 }
 
 /* ------------------------------ 2–3. 1RM kartı ------------------------------ */
@@ -690,6 +720,7 @@ private fun LevelLadderRow(lift: LiftStandard, onOpen: (Long) -> Unit) {
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(lift.level, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = c)
+            if (lift.bestReps > 0) Text("  · ${lift.bestWeight.tr()}×${lift.bestReps}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
             Spacer(Modifier.weight(1f))
             Text(
                 if (lift.nextLevel != null && lift.nextLevelWeight > lift.e1rm)

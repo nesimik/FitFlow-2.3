@@ -122,7 +122,12 @@ data class LiftStandard(
     val nextLevel: String?,
     val nextLevelWeight: Float,
     /** Seviye eşikleri (kg): Acemi, Orta, İleri, Çok İleri, Elit başlangıçları. */
-    val thresholdsKg: List<Float> = emptyList()
+    val thresholdsKg: List<Float> = emptyList(),
+    /** Tahminin dayandığı en iyi set (kaydedildiği haliyle). */
+    val bestWeight: Float = 0f,
+    val bestReps: Int = 0,
+    /** Dambıl setinden barbell karşılığına çevrildi mi? */
+    val fromDumbbell: Boolean = false
 ) {
     /** 0..6 arası kesirli seviye konumu (her seviye eşit genişlikte). */
     val position: Float get() {
@@ -543,7 +548,10 @@ object ProgressAnalytics {
                 levelIndex = idx,
                 nextLevel = next,
                 nextLevelWeight = nextWeight,
-                thresholdsKg = thresholds.map { it * bodyWeightKg }
+                thresholdsKg = thresholds.map { it * bodyWeightKg },
+                bestWeight = best.weightKg,
+                bestReps = best.reps,
+                fromDumbbell = fromDumbbell
             )
         }
     }
@@ -571,9 +579,17 @@ object ProgressAnalytics {
         }
     }
 
-    /** SBD toplamı (squat + bench + deadlift tahmini 1RM). */
+    /**
+     * Ana kaldırış toplamı: squat + bench + deadlift (tahmini 1RM).
+     * Klasik deadlift kaydı yoksa yerine Romanian Deadlift sayılır (2.31).
+     */
+    fun totalParts(profile: List<LiftStandard>): List<LiftStandard> {
+        fun k(key: String) = profile.firstOrNull { it.liftKey == key }
+        return listOfNotNull(k("squat"), k("bench"), k("deadlift") ?: k("rdl"))
+    }
+
     fun totalScore(profile: List<LiftStandard>): Float =
-        profile.filter { it.liftKey in listOf("squat", "bench", "deadlift") }.sumOf { it.e1rm.toDouble() }.toFloat()
+        totalParts(profile).sumOf { it.e1rm.toDouble() }.toFloat()
 
     /* ------------------------------ Tekrar dağılımı -------------------------- */
 
