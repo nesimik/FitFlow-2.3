@@ -1357,7 +1357,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 exerciseName = ex.name
             )
             // Geçmişi olmayan harekette programdaki hedef ağırlık kullanılır (deload'da ~%90, plaka adımına yuvarlı)
-            item to if (rx.action == ProgressAction.FIRST && item.targetWeight > 0f && kind != LoadKind.BODYWEIGHT) {
+            item to if (rx.action == com.example.core.ProgressAction.FIRST && item.targetWeight > 0f && kind != LoadKind.BODYWEIGHT) {
                 val w = if (deload) profile.round(item.targetWeight * 0.9f, kind).let { r -> if (r >= item.targetWeight) profile.down(item.targetWeight, kind) else r }
                 else item.targetWeight
                 rx.copy(weight = w, headline = "${w.trimNum()} kg · ${rx.repTargets.joinToString("/")}")
