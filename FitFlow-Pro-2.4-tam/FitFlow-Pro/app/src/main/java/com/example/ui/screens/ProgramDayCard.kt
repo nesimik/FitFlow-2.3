@@ -133,11 +133,15 @@ fun ProgramDayCard(
     val running = activeWorkout?.takeIf { !it.isFinished }
     val isActiveDay = running != null && running.routineDayId == day.id
     val work = items.filter { !it.isWarmup }
-    val sets = work.sumOf { it.targetSets }
-    val minutes = (8 + items.sumOf { it.targetSets * (it.restSeconds + 40) } / 60) / 5 * 5
+    val deloadRec by vm.deloadRecommendation.collectAsStateWithLifecycle()
+    val isDeload = deloadRec.isCurrentlyDeloadWeek
+    // Deload haftasında set sayısı yarıya (yukarı yuvarlanır): 3→2, 4→2, 5→3
+    fun setsOf(n: Int) = if (isDeload) maxOf(1, (n + 1) / 2) else n
+    val sets = work.sumOf { setsOf(it.targetSets) }
+    val minutes = (8 + items.sumOf { setsOf(it.targetSets) * (it.restSeconds + 40) } / 60) / 5 * 5
     val chevron by animateFloatAsState(if (expanded) 180f else 0f, label = "chev")
     val allSets by vm.allSets.collectAsStateWithLifecycle()
-    val plan = remember(items, ladderCfgs, allSets) { vm.planByItem(day.id) }
+    val plan = remember(items, ladderCfgs, allSets, isDeload) { vm.planByItem(day.id) }
 
     fun start() {
         if (running != null && !isActiveDay) showBusy = true
@@ -186,6 +190,7 @@ fun ProgramDayCard(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
+            if (isDeload && !isActiveDay) { Badge("DELOAD", Palette.violet); Spacer(Modifier.width(4.dp)) }
             if (isActiveDay) Badge("DEVAM EDİYOR", MaterialTheme.fit.success)
             else if (isToday) Badge("BUGÜN", MaterialTheme.fit.accent)
             Box {

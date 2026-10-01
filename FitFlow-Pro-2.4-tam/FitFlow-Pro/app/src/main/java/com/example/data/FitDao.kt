@@ -134,6 +134,10 @@ interface FitDao {
     @Query("SELECT * FROM workouts WHERE routineDayId = :dayId AND isFinished = 1 ORDER BY startedAt DESC LIMIT 1")
     suspend fun lastFinishedWorkoutForDay(dayId: Long): WorkoutEntity?
 
+    /** Deload olmayan son seans (ilerleme ve önerilerin temeli). */
+    @Query("SELECT * FROM workouts WHERE routineDayId = :dayId AND isFinished = 1 AND isDeload = 0 ORDER BY startedAt DESC LIMIT 1")
+    suspend fun lastFinishedNormalWorkoutForDay(dayId: Long): WorkoutEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertWorkout(w: WorkoutEntity): Long
 
@@ -183,6 +187,14 @@ interface FitDao {
            ORDER BY w.startedAt DESC, s.setNumber ASC"""
     )
     suspend fun lastSetsForExerciseInDay(dayId: Long, exerciseId: Long): List<WorkoutSetEntity>
+
+    @Query(
+        """SELECT s.* FROM workout_sets s
+           INNER JOIN workouts w ON w.id = s.workoutId
+           WHERE w.routineDayId = :dayId AND s.exerciseId = :exerciseId AND w.isFinished = 1 AND w.isDeload = 0 AND s.isCompleted = 1
+           ORDER BY w.startedAt DESC, s.setNumber ASC"""
+    )
+    suspend fun lastNormalSetsForExerciseInDay(dayId: Long, exerciseId: Long): List<WorkoutSetEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSet(s: WorkoutSetEntity): Long

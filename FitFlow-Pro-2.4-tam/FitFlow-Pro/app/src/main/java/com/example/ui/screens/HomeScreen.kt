@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -114,6 +116,9 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
     val weekLoads by vm.weeklyMuscleLoads.collectAsStateWithLifecycle()
     val weekDetail by vm.weeklyDetailLoads.collectAsStateWithLifecycle()
     val progressIds by vm.progressExerciseIds.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
+    val updateDismissed by vm.updateDismissed.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var showCancelActiveDialog by remember { mutableStateOf(false) }
     var hasPreDeloadBackup by remember { mutableStateOf(vm.settings.getPreDeloadBackup().isNotBlank()) }
@@ -167,6 +172,15 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item { HomeHeader(name, stats.streakWeeks) { nav.navigate(Routes.PROFILE) } }
+
+        /* Güncelleme (2.30) */
+        if (update != null && !updateDismissed) {
+            item {
+                Box(Modifier.padding(horizontal = 16.dp)) {
+                    UpdateBanner(update!!, onInstall = { com.example.ui.AppUpdate.download(context, update!!.apkUrl) }, onLater = { vm.dismissUpdate() })
+                }
+            }
+        }
 
         if (deloadRecommendation.shouldDeloadNow || deloadRecommendation.isCurrentlyDeloadWeek || hasPreDeloadBackup) {
             item {
@@ -415,7 +429,7 @@ private fun TrainingHero(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        Text(dayMeta(items), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+        Text(dayMeta(items, plan.any { it.second.action == ProgressAction.DELOAD }), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
         if (plan.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             plan.forEachIndexed { i, (n, rx) -> PlanRow(n, rx, divider = i > 0) }
@@ -443,7 +457,7 @@ private fun RestHero(
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
         )
         Text(
-            listOf(day.name, day.focus).filter { it.isNotBlank() }.joinToString(" · ") + " · " + dayMeta(items),
+            listOf(day.name, day.focus).filter { it.isNotBlank() }.joinToString(" · ") + " · " + dayMeta(items, plan.any { it.second.action == ProgressAction.DELOAD }),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.fit.muted,
             maxLines = 2
@@ -1141,10 +1155,11 @@ private fun actionArrow(a: ProgressAction): String = when (a) {
 }
 
 /** Planlanan günün seans sayısı, set toplamı ve tahmini süresi. */
-private fun dayMeta(items: List<RoutineItemEntity>): String {
+private fun dayMeta(items: List<RoutineItemEntity>, deload: Boolean = false): String {
+    fun n(i: RoutineItemEntity) = if (deload) maxOf(1, (i.targetSets + 1) / 2) else i.targetSets
     val work = items.filter { !it.isWarmup }
-    val sets = work.sumOf { it.targetSets }
-    val minutes = 8 + items.sumOf { it.targetSets * (it.restSeconds + 40) } / 60
+    val sets = work.sumOf { n(it) }
+    val minutes = 8 + items.sumOf { n(it) * (it.restSeconds + 40) } / 60
     return "${work.size} hareket · $sets set · ~${(minutes / 5) * 5} dk"
 }
 
@@ -1428,4 +1443,47 @@ private fun SummaryMetric(value: String, label: String, delta: Int?, modifier: M
 @Composable
 private fun SummaryDivider() {
     Box(Modifier.width(1.dp).height(34.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
+}
+
+
+/* ------------------------------ Güncelleme bandı ------------------------------ */
+
+@Composable
+private fun UpdateBanner(info: com.example.ui.AppUpdate.Info, onInstall: () -> Unit, onLater: () -> Unit) {
+    val accent = MaterialTheme.fit.accent
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(accent.copy(alpha = 0.22f), accent.copy(alpha = 0.06f))))
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.SystemUpdate, null, tint = accent, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("FitFlow ${info.version} hazır", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                Text("Yüklü: ${com.example.BuildConfig.VERSION_NAME} · verilerin korunur", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            }
+        }
+        val notes = info.notes.lineSequence().firstOrNull { it.isNotBlank() }
+        if (notes != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(notes, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(12.dp)).background(accent).clickable { onInstall() },
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Download, null, tint = MaterialTheme.fit.onAccent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("İndir ve kur", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.onAccent)
+            }
+            Text(
+                "Sonra", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.muted,
+                modifier = Modifier.height(42.dp).clip(RoundedCornerShape(12.dp)).clickable { onLater() }.padding(horizontal = 16.dp, vertical = 11.dp)
+            )
+        }
+    }
 }

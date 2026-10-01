@@ -398,7 +398,8 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         )
         if (dayId != null) {
             val items = dao.itemsForDay(dayId).sortedBy { it.orderIndex }
-            val lastWorkoutForDay = dao.lastFinishedWorkoutForDay(dayId)
+            // 2.30: deload seansları temel alınmaz — öneriler ve ön doldurma son NORMAL haftaya göre.
+            val lastWorkoutForDay = dao.lastFinishedNormalWorkoutForDay(dayId) ?: dao.lastFinishedWorkoutForDay(dayId)
             val lastWorkoutSets = if (lastWorkoutForDay != null) dao.setsForWorkout(lastWorkoutForDay.id) else emptyList()
 
             val newSets = mutableListOf<WorkoutSetEntity>()
@@ -408,7 +409,8 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                 val daySetsForEx = lastWorkoutSets.filter { it.exerciseId == item.exerciseId }.sortedBy { it.setNumber }
                 // 2) Eğer o en son seansta bu hareket yapılmamışsa, bu günün (dayId) daha önceki tamamlanmış seanslarına bak
                 val olderDaySets = if (daySetsForEx.isEmpty()) {
-                    val allDaySets = dao.lastSetsForExerciseInDay(dayId, item.exerciseId)
+                    val allDaySets = dao.lastNormalSetsForExerciseInDay(dayId, item.exerciseId)
+                        .ifEmpty { dao.lastSetsForExerciseInDay(dayId, item.exerciseId) }
                     val wid = allDaySets.firstOrNull()?.workoutId
                     if (wid != null) allDaySets.filter { it.workoutId == wid }.sortedBy { it.setNumber } else emptyList()
                 } else emptyList()
@@ -422,7 +424,8 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                 // Progresyon reçetesi: bu günün geçmişine göre bugünkü ağırlık ve hedef tekrarlar.
                 // Seans, geçen haftanın değerleriyle değil, reçeteyle açılır — tek dokunuşla kayıt.
                 val rx = if (isDuration || item.isWarmup) null else {
-                    val daySets = dao.lastSetsForExerciseInDay(dayId, item.exerciseId)
+                    val daySets = dao.lastNormalSetsForExerciseInDay(dayId, item.exerciseId)
+                        .ifEmpty { dao.lastSetsForExerciseInDay(dayId, item.exerciseId) }
                     val sessions = daySets
                         .filter { !it.isWarmup && it.reps > 0 }
                         .groupBy { it.workoutId }
@@ -455,7 +458,15 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                     val isWarmupSet = prefill?.isWarmup ?: item.isWarmup
                     val rxIndex = if (isWarmupSet) -1 else workingIndex++
                     val baseWeight = prefill?.weightKg?.takeIf { it > 0f } ?: item.targetWeight
-                    val weight = if (rx != null && rxIndex >= 0 && rx.weight > 0f) rx.weight else baseWeight
+                    val weight = when {
+                        rx != null && rxIndex >= 0 && rx.weight > 0f -> rx.weight
+                        // Deload'da reçetesi olmayan ağırlıklı setler de ~%90'a, plaka adımına yuvarlanır
+                        isDeload && !isWarmupSet && baseWeight > 0f && com.example.core.loadKindOf(ex.equipment) != com.example.core.LoadKind.BODYWEIGHT -> {
+                            val k = com.example.core.loadKindOf(ex.equipment)
+                            profile.round(baseWeight * 0.9f, k).let { r -> if (r >= baseWeight) profile.down(baseWeight, k) else r }
+                        }
+                        else -> baseWeight
+                    }
                     val defaultReps = if (isDeload) 8 else (if (item.repMin > 0) item.repMin else 10)
                     val baseReps = prefill?.reps?.takeIf { it > 0 } ?: defaultReps
                     val reps = if (isDuration) 0 else if (rx != null && rxIndex >= 0) rx.repsFor(rxIndex) else baseReps

@@ -338,7 +338,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         val sGroup = sets.firstOrNull()?.supersetGroup?.takeIf { it > 0 } ?: item?.supersetGroup ?: 0
                         val tracking = ex?.trackingType ?: ExerciseEntity.TRACK_WEIGHT_REPS
                         val exIsWarmup = sets.firstOrNull()?.isWarmup ?: (item?.isWarmup == true)
-                        val rxHistory = pastSets
+                        val normalPast = pastSets.filter { workoutMap[it.workoutId]?.isDeload != true }.ifEmpty { pastSets }
+                        val rxHistory = normalPast
                             .filter { !it.isWarmup && it.reps > 0 }
                             .groupBy { it.workoutId }
                             .map { (wid, ws) ->
@@ -425,11 +426,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /* ------------------------------ Güncelleme (2.30) ------------------------------ */
+    private val _update = MutableStateFlow<AppUpdate.Info?>(null)
+    /** Yüklü sürümden yeni bir sürüm yayımlandıysa bilgisi. */
+    val update: StateFlow<AppUpdate.Info?> = _update
+    private val _updateDismissed = MutableStateFlow(false)
+    val updateDismissed: StateFlow<Boolean> = _updateDismissed
+    fun dismissUpdate() { _updateDismissed.value = true }
+
+    /** @return null = denetlenemedi (ağ yok), aksi halde en son sürüm bilgisi. */
+    fun checkUpdate(onResult: (AppUpdate.Info?) -> Unit = {}) {
+        viewModelScope.launch {
+            val info = AppUpdate.latest()
+            if (info != null && AppUpdate.isNewer(info.version, com.example.BuildConfig.VERSION_NAME)) _update.value = info
+            onResult(info)
+        }
+    }
+
     private var restJob: Job? = null
     private var ringtone: Ringtone? = null
     private var alarmJob: Job? = null
 
     init {
+        checkUpdate()
         // Kilit ekranı / bildirim düğmeleri: +30 sn ve Atla
         viewModelScope.launch {
             RestActionBus.events.collect { what ->
@@ -1210,7 +1229,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun planItems(dayId: Long): List<Pair<RoutineItemEntity, Prescription>> {
         val items = allItems.value.filter { it.dayId == dayId }.sortedBy { it.orderIndex }
-        val dayWorkouts = workouts.value.filter { it.isFinished && it.routineDayId == dayId }.associateBy { it.id }
+        // 2.30: deload seansları ilerlemenin temeli değildir (yoksa sonraki hafta düşük yükten başlar).
+        val dayAll = workouts.value.filter { it.isFinished && it.routineDayId == dayId }
+        val dayWorkouts = (dayAll.filter { !it.isDeload }.ifEmpty { dayAll }).associateBy { it.id }
         val lib = exercises.value.associateBy { it.id }
         val profile = settings.loadingProfile()
         val deload = deloadRecommendation.value.isCurrentlyDeloadWeek

@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.NewReleases
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Share
@@ -654,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.30" to "Deload haftası: kartlar ve seans deload set/ağırlıklarını gösterir, öneriler son normal haftaya göre hesaplanır. Uygulama içinden güncelleme (indir ve kur).",
     "2.29" to "Programdan çıkan ve 14 gündür yapılmayan hareketler ilerleme ekranlarında gizlenir; programa geri eklenince geçmişiyle birlikte döner. Yeni güç seviyesi merdiveni.",
     "2.28" to "Güç sekmesi: güç özeti, dönem seçmeli 1RM grafiği (rekor noktaları, eğilim), 1RM hedefi ve tahmini süre, tekrar–ağırlık tablosu, plato uyarıları. Kaslar: kas × hafta ısı haritası, program uyumu, kas detayında güç göstergesi.",
     "2.27" to "Geçmiş seanslar kilitli açılır; düzenleme ve hareket/set silme onay ister. Ana ekranda 4 haftalık özet kartı.",
@@ -680,8 +684,9 @@ private fun AboutPage() {
             KeyValueRow("Uygulama", "FitFlow")
             KeyValueRow("Sürüm", com.example.BuildConfig.VERSION_NAME)
             KeyValueRow("Veri", "Yalnızca bu cihazda")
-            KeyValueRow("İnternet", "Kullanılmıyor")
+            KeyValueRow("İnternet", "Yalnızca güncelleme denetimi")
         }
+        UpdateSection()
         FitCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.NewReleases, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(20.dp))
@@ -711,6 +716,54 @@ private fun AboutPage() {
     }
 }
 
+
+@Composable
+private fun UpdateSection() {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var status by remember { mutableStateOf<String?>(null) }
+    var latest by remember { mutableStateOf<com.example.ui.AppUpdate.Info?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    FitCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.fit.accent, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Güncelleme", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            status ?: "Yeni sürümler GitHub'da yayımlanır. Uygulama açılışta kendisi denetler; buradan elle de bakabilirsin.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted
+        )
+        Spacer(Modifier.height(10.dp))
+        val l = latest
+        if (l != null && com.example.ui.AppUpdate.isNewer(l.version, com.example.BuildConfig.VERSION_NAME)) {
+            AccentButton("${l.version} sürümünü indir ve kur", { com.example.ui.AppUpdate.download(context, l.apkUrl) }, Modifier.fillMaxWidth(), Icons.Default.Download)
+        } else {
+            GhostButton(if (busy) "Denetleniyor…" else "Güncellemeleri denetle", {
+                if (!busy) {
+                    busy = true
+                    scope.launch {
+                        val info = com.example.ui.AppUpdate.latest()
+                        busy = false
+                        latest = info
+                        status = when {
+                            info == null -> "Denetlenemedi. İnternet bağlantını kontrol et."
+                            com.example.ui.AppUpdate.isNewer(info.version, com.example.BuildConfig.VERSION_NAME) -> "Yeni sürüm var: ${info.version}"
+                            else -> "En güncel sürümü kullanıyorsun (${com.example.BuildConfig.VERSION_NAME})."
+                        }
+                    }
+                }
+            }, Modifier.fillMaxWidth(), Icons.Default.Refresh)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Her zaman son sürüm: ${com.example.ui.AppUpdate.LATEST_APK}",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.accent,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { com.example.ui.AppUpdate.download(context) }.padding(vertical = 4.dp)
+        )
+    }
+}
 
 /* ------------------------------ Sınırsız renk seçici ----------------------------- */
 

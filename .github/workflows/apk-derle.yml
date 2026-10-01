@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -57,3 +59,18 @@ jobs:
         with:
           name: FitFlow-Pro-APK
           path: '**/app/build/outputs/apk/debug/*.apk'
+
+      # Telefondan doğrudan kurulum: her başarılı derleme FitFlow.apk olarak "Releases"e yayımlanır.
+      # Sabit bağlantı: https://github.com/nesimik/FitFlow-2.3/releases/latest/download/FitFlow.apk
+      - name: Sürümü yayımla
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find . -path "*/app/build/outputs/apk/debug/*.apk" | head -1)
+          GRADLE=$(find . -path "*/app/build.gradle.kts" -not -path "./.git/*" | head -1)
+          V=$(grep -m1 'versionName' "$GRADLE" | sed -E 's/.*"(.*)".*/\1/')
+          cp "$APK" FitFlow.apk
+          git log -1 --pretty=%B | grep -v -e '^Co-Authored-By' -e '^Claude-Session' > notes.txt
+          gh release delete "v$V" -y --cleanup-tag 2>/dev/null || true
+          gh release create "v$V" FitFlow.apk --title "FitFlow $V" --notes-file notes.txt --latest --target "$GITHUB_SHA"
