@@ -657,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.35" to "Program kartındaki set/ağırlık/tekrar seansa birebir aynı gelir (deload dahil): kart, seans açılışı ve seans içi öneri tek hesaptan beslenir.",
     "2.34" to "Gün düzenleyici: hareketleri sırala, sil (geri al), dokunup tüm ayarlarına ulaş. Seansta değişen hareket sırası programa da yazılır (geri alınabilir); süperset birlikte taşınır.",
     "2.33" to "Dambıl hacmi iki dambılla sayılır; seansta anında PR rozeti, geri al, kalan setlere uygula, süperset turları, hareket bazlı dinlenme, drop/tükeniş seti, hareket sırası, dinlenme duraklatma ve büyük sayaç; geçmişten seansı tekrarla.",
     "2.32" to "Hesap denetimi: işaretlenmeyen setler artık kaydedilmez, 1,25 kg adımı düzeltildi, sahte plato/gerileme ve yanlış aşırı yüklenme uyarıları giderildi, deload kıyaslardan çıkarıldı, makine squat/bench güç seviyesine sayılmaz.",

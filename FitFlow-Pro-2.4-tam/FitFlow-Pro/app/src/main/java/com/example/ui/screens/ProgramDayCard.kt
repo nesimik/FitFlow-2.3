@@ -372,9 +372,10 @@ private fun ProgramItemRow(
     val reps = when {
         isDuration -> "${item.targetSets} × ${item.repMin} sn"
         rx != null && rx.action != com.example.core.ProgressAction.FIRST -> rx.repTargets.joinToString("-")
-        spec != null -> "${item.targetSets} × ${spec.targets(0, item.targetSets).joinToString("-")}"
-        item.repMin == item.repMax -> "${item.targetSets} × ${item.repMin}"
-        else -> "${item.targetSets} × ${item.repMin}–${item.repMax}"
+        // Geçmiş yoksa da set sayısı reçeteden (deload'da yarıya inmiş hali)
+        spec != null -> "${rx?.sets ?: item.targetSets} × ${spec.targets(0, rx?.sets ?: item.targetSets).joinToString("-")}"
+        item.repMin == item.repMax -> "${rx?.sets ?: item.targetSets} × ${item.repMin}"
+        else -> "${rx?.sets ?: item.targetSets} × ${item.repMin}–${item.repMax}"
     }
     val kg = when {
         isDuration -> 0f

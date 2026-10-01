@@ -310,6 +310,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val dayItems = items.filter { it.dayId == workout.routineDayId }.sortedBy { it.orderIndex }
                 val workoutMap = wList.associateBy { it.id }
                 val currentRoutineDayId = workout.routineDayId
+                val dayPlan: Map<Long, Prescription> = currentRoutineDayId?.let { planForSession(it, workout.isDeload) } ?: emptyMap()
 
                 current.groupBy { it.exerciseOrder }
                     .map { (order, sets) ->
@@ -361,8 +362,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             settings.ladderFor(item?.id), // ladderCfgs değişince yeniden hesaplanır
                             ex?.name ?: sets.first().exerciseName, ex?.muscleGroup ?: "", ex?.equipment ?: "", tracking
                         )
+                        val planned = if (item != null && !exIsWarmup && item.exerciseId == exId) dayPlan[item.id] else null
                         val prescription = if (tracking == ExerciseEntity.TRACK_DURATION || exIsWarmup) null
-                        else ProgressionEngine.prescribe(
+                        else planned ?: ProgressionEngine.prescribe(
                             history = rxHistory,
                             targetSets = run {
                                 val rows = sets.count { !it.isWarmup }
@@ -504,6 +506,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 title = workoutTitle,
                 routineName = routine?.name ?: "",
                 isDeload = shouldDeload,
+                plan = day?.let { planForSession(it.id, shouldDeload) } ?: emptyMap(),
                 profile = settings.loadingProfile(),
                 ladderFor = { itemId -> settings.ladderFor(itemId) }
             )
@@ -1314,14 +1317,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Program hareketi id → bir sonraki seansın önerisi (ağırlık + hedef tekrarlar). */
     fun planByItem(dayId: Long): Map<Long, Prescription> = planItems(dayId).associate { (item, rx) -> item.id to rx }
 
-    private fun planItems(dayId: Long): List<Pair<RoutineItemEntity, Prescription>> {
+    /**
+     * 2.35: Program kartı, seansın açılışı ve seans içi öneri paneli AYNI fonksiyondan beslenir;
+     * böylece kartta görünen set/ağırlık/tekrar seansta birebir aynı gelir (deload dahil).
+     */
+    private fun planItems(dayId: Long, deloadOverride: Boolean? = null): List<Pair<RoutineItemEntity, Prescription>> {
         val items = allItems.value.filter { it.dayId == dayId }.sortedBy { it.orderIndex }
         // 2.30: deload seansları ilerlemenin temeli değildir (yoksa sonraki hafta düşük yükten başlar).
         val dayAll = workouts.value.filter { it.isFinished && it.routineDayId == dayId }
         val dayWorkouts = (dayAll.filter { !it.isDeload }.ifEmpty { dayAll }).associateBy { it.id }
         val lib = exercises.value.associateBy { it.id }
         val profile = settings.loadingProfile()
-        val deload = deloadRecommendation.value.isCurrentlyDeloadWeek
+        val deload = deloadOverride ?: deloadRecommendation.value.isCurrentlyDeloadWeek
         val sets = allSets.value
         return items.mapNotNull { item ->
             val ex = lib[item.exerciseId] ?: return@mapNotNull null
@@ -1337,7 +1344,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 .sortedByDescending { it.dateMillis }
                 .take(8)
-            item to ProgressionEngine.prescribe(
+            val kind = if (ex.trackingType == ExerciseEntity.TRACK_REPS) LoadKind.BODYWEIGHT else loadKindOf(ex.equipment)
+            val rx = ProgressionEngine.prescribe(
                 history = sessions,
                 targetSets = maxOf(item.targetSets, sessions.firstOrNull()?.sets?.size ?: 0),
                 repMin = item.repMin,
@@ -1348,8 +1356,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 ladder = com.example.core.Ladders.resolve(settings.ladderFor(item.id), ex.name, ex.muscleGroup, ex.equipment, ex.trackingType),
                 exerciseName = ex.name
             )
+            // Geçmişi olmayan harekette programdaki hedef ağırlık kullanılır (deload'da ~%90, plaka adımına yuvarlı)
+            item to if (rx.action == ProgressAction.FIRST && item.targetWeight > 0f && kind != LoadKind.BODYWEIGHT) {
+                val w = if (deload) profile.round(item.targetWeight * 0.9f, kind).let { r -> if (r >= item.targetWeight) profile.down(item.targetWeight, kind) else r }
+                else item.targetWeight
+                rx.copy(weight = w, headline = "${w.trimNum()} kg · ${rx.repTargets.joinToString("/")}")
+            } else rx
         }
     }
+
+    /** Belirli deload durumu için günün reçeteleri (seans açılışı ve seans içi panel). */
+    fun planForSession(dayId: Long, deload: Boolean): Map<Long, Prescription> =
+        planItems(dayId, deload).associate { (item, rx) -> item.id to rx }
 
     /**
      * Devam eden seansın özetini ve bu seansın sonuçlarına göre BİR SONRAKİ seansın

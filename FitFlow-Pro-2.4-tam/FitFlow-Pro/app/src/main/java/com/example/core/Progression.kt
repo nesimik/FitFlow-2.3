@@ -280,7 +280,7 @@ object ProgressionEngine {
             return Prescription(
                 action = ProgressAction.FIRST,
                 weight = 0f,
-                repTargets = List(setCount) { lo },
+                repTargets = List(if (deload) maxOf(1, (setCount + 1) / 2) else setCount) { lo },
                 repMin = lo, repMax = hi,
                 headline = "$setCount × $lo-$hi",
                 reason = "İlk kayıt. $hi tekrarı RPE 7-8 ile rahat yapabileceğin bir ağırlık seç."
@@ -392,7 +392,7 @@ object ProgressionEngine {
         // Dips / barfiks: ağırlıklı versiyonda (kg alanı olan) plaka adımıyla artar.
         val step = if (kind == LoadKind.BODYWEIGHT) 0f
         else profile.step(kind).takeIf { it > 0f } ?: profile.barbellStep
-        val first = scheme.targets(0, setCount)
+        val first = scheme.targets(0, if (deload) maxOf(1, (setCount + 1) / 2) else setCount)
 
         if (sessions.isEmpty()) {
             return Prescription(
