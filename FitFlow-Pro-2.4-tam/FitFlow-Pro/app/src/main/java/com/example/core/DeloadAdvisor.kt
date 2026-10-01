@@ -66,11 +66,15 @@ object DeloadAdvisor {
             finished.filter { it.isDeload }.maxOfOrNull { startOfWeek(it.startedAt) }?.takeIf { it < currentWeekStart },
             activeDeloadWeekStart.takeIf { it in 1 until currentWeekStart }
         ).maxOrNull()
-        val cycleStart = when {
-            lastDeloadWeek != null -> lastDeloadWeek + week
-            finished.isNotEmpty() -> startOfWeek(finished.minOf { it.startedAt })
-            else -> currentWeekStart
-        }
+        // 2.32: 10+ gün ara verildiyse (tatil, hastalık) vücut zaten toparlanmıştır: döngü aradan sonra yeniden başlar.
+        val times = finished.map { it.startedAt }.sorted()
+        val afterBreak = times.indices.lastOrNull { i -> i > 0 && times[i] - times[i - 1] >= 10 * 24 * 3600 * 1000L }
+            ?.let { startOfWeek(times[it]) }
+        val cycleStart = listOfNotNull(
+            lastDeloadWeek?.let { it + week },
+            afterBreak,
+            if (lastDeloadWeek == null && afterBreak == null) (if (finished.isNotEmpty()) startOfWeek(times.first()) else currentWeekStart) else null
+        ).maxOrNull() ?: currentWeekStart
         val cycleWeek = (((now - cycleStart).coerceAtLeast(0L) / week).toInt() + 1).coerceAtLeast(1)
 
         val cycleWorkouts = finished.filter { it.startedAt >= cycleStart && !it.isDeload }

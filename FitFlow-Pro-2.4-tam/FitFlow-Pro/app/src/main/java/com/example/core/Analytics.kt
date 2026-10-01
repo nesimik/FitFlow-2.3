@@ -39,7 +39,8 @@ object Analytics {
 
     /** Bir setin hacim/istatistik hesaplamalarına dahil edilmesi için geçerli olup olmadığı. */
     fun isEffectiveSet(s: WorkoutSetEntity): Boolean =
-        !s.isWarmup && (s.isCompleted || s.reps > 0 || s.weightKg > 0f || s.durationSeconds > 0) && (s.reps > 0 || s.weightKg > 0f || s.durationSeconds > 0)
+        // 2.32: yalnızca işaretlenmiş (yapılmış) setler. Açık seansın ön doldurulmuş setleri sayılmaz.
+        !s.isWarmup && s.isCompleted && (s.reps > 0 || s.weightKg > 0f || s.durationSeconds > 0)
 
     private fun getMillis(timestamp: Long): Long {
         if (timestamp <= 0L) return System.currentTimeMillis()
@@ -60,8 +61,9 @@ object Analytics {
 
         fun setCountOf(w: WorkoutEntity): Int = byWorkout[w.id]?.size ?: 0
 
-        val thisWeek = workouts.filter { it.startedAt >= weekStart }
-        val lastWeek = workouts.filter { it.startedAt in prevWeekStart until weekStart }
+        val thisWeek = workouts.filter { it.isFinished && it.startedAt >= weekStart }
+        // 2.32: yarım haftayı tam haftayla kıyaslamamak için geçen haftanın AYNI ANINA kadar olan kısmı
+        val lastWeek = workouts.filter { it.isFinished && it.startedAt in prevWeekStart until (now - 7 * 86_400_000L) }
 
         val totalVolume = validSets.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
         val last = workouts.maxByOrNull { it.startedAt }
@@ -76,7 +78,7 @@ object Analytics {
             totalVolume = totalVolume,
             totalSets = validSets.size,
             totalDurationSec = workouts.sumOf { it.durationSeconds },
-            avgDurationSec = if (workouts.isEmpty()) 0 else workouts.sumOf { it.durationSeconds } / workouts.size,
+            avgDurationSec = workouts.filter { it.durationSeconds > 0 }.let { d -> if (d.isEmpty()) 0 else d.sumOf { it.durationSeconds } / d.size },
             streakWeeks = streakWeeks(workouts),
             streakDays = streakDays(workouts),
             lastWorkoutMillis = last?.startedAt ?: 0L,

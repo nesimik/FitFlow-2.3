@@ -142,7 +142,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** İlerleme analizleri için setler (programdan çıkmış eski hareketler hariç). */
     val progressSets: StateFlow<List<WorkoutSetEntity>> =
-        combine(allSets, progressExerciseIds) { s, ids -> if (ids == null) s else s.filter { it.exerciseId in ids } }
+        combine(allSets, progressExerciseIds, workouts) { s, ids, ws ->
+            // Deload seansları güç/plato analizine girmez (bilerek hafif yapılır, "düşüş" sayılmamalı).
+            val deloadIds = ws.filter { it.isDeload }.map { it.id }.toHashSet()
+            s.filter { (ids == null || it.exerciseId in ids) && it.workoutId !in deloadIds }
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _isReady = MutableStateFlow(false)
@@ -757,11 +761,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _durationTimer.value = null
     }
 
-    fun finishWorkout(notes: String, feeling: Int, onDone: () -> Unit) {
+    fun finishWorkout(notes: String, feeling: Int, keepUnticked: Boolean = false, onDone: () -> Unit) {
         val w = activeWorkout.value ?: return
         val duration = _elapsed.value
         viewModelScope.launch {
-            val newPrs = repo.finishWorkout(w.id, duration, notes, feeling, settings.weightKg.value)
+            val newPrs = repo.finishWorkout(w.id, duration, notes, feeling, settings.weightKg.value, keepUnticked)
             stopRest()
             _elapsed.value = 0
             if (newPrs.isNotEmpty() && settings.prCelebrate.value) _celebration.value = PrCelebration(newPrs, w.title)

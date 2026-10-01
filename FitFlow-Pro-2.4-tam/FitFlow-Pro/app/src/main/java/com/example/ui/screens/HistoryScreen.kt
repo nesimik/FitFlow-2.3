@@ -604,7 +604,7 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                                     "${exSets.count { Analytics.isEffectiveSet(it) }} set · ${exSets.sumOf { it.durationSeconds }} sn"
                                 } else {
                                     "${exSets.count { Analytics.isEffectiveSet(it) }} set · " +
-                                        formatTonnage(exSets.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat())
+                                        formatTonnage(exSets.filter { Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat())
                                 }
                                 Text(
                                     summaryText,

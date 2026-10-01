@@ -13,9 +13,10 @@ val TR: Locale = Locale("tr", "TR")
 
 /* ================================ Biçimlendirme ================================ */
 
+/** 2.32: en fazla 2 ondalık (1.25 kg adımları "1.3" olarak yuvarlanıp yanlış kaydediliyordu). */
 fun Float.trimNum(): String =
     if (abs(this - this.roundToInt()) < 0.001f) this.roundToInt().toString()
-    else String.format(Locale.US, "%.1f", this)
+    else String.format(Locale.US, "%.2f", this).trimEnd('0').trimEnd('.')
 
 fun Float.kg(): String = "${trimNum()} kg"
 

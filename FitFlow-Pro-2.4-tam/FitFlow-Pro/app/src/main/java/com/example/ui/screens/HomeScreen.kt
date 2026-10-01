@@ -125,7 +125,16 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
 
     val today = todayWeekday()
     val plannedWeekdays = remember(days) { days.map { it.weekday }.filter { it in 1..7 }.toSet() }
-    val todayDay = remember(days, today) { days.firstOrNull { it.weekday == today } }
+    // 2.32: haftanın gününe bağlı olmayan (A/B dönüşümlü) programlarda "bugün" sıradaki gündür.
+    val rotation = days.isNotEmpty() && days.none { it.weekday in 1..7 }
+    val todayDay = remember(days, today, workouts, rotation) {
+        if (!rotation) days.firstOrNull { it.weekday == today }
+        else {
+            val dayStart = startOfDay(System.currentTimeMillis())
+            val doneId = workouts.filter { it.isFinished && it.startedAt >= dayStart }.maxByOrNull { it.startedAt }?.routineDayId
+            days.firstOrNull { it.id == doneId } ?: nextPlannedDay(days, workouts, today)
+        }
+    }
     val doneToday = remember(workouts, todayDay) {
         val dayStart = startOfDay(System.currentTimeMillis())
         workouts.any { it.isFinished && it.startedAt >= dayStart && (todayDay == null || it.routineDayId == todayDay.id) }
@@ -218,8 +227,9 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
                     doneToday && todayWorkout != null -> DoneHero(
                         workout = todayWorkout,
                         sets = allSets,
-                        previous = workouts.filter {
-                            it.isFinished && it.id != todayWorkout.id && it.startedAt < todayWorkout.startedAt &&
+                        // Deload seansı önceki haftayla kıyaslanmaz; kıyas her zaman son normal seansla.
+                        previous = if (todayWorkout.isDeload) null else workouts.filter {
+                            it.isFinished && !it.isDeload && it.id != todayWorkout.id && it.startedAt < todayWorkout.startedAt &&
                                 todayWorkout.routineDayId != null && it.routineDayId == todayWorkout.routineDayId
                         }.maxByOrNull { it.startedAt },
                         prNames = prs.filter { it.workoutId == todayWorkout.id }
@@ -1004,8 +1014,8 @@ private fun RecentWorkoutsCard(
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
             val mine = sets.filter { it.workoutId == w.id && Analytics.isEffectiveSet(it) }
             val vol = mine.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
-            val prev = all.filter {
-                it.isFinished && it.id != w.id && it.startedAt < w.startedAt && w.routineDayId != null && it.routineDayId == w.routineDayId
+            val prev = if (w.isDeload) null else all.filter {
+                it.isFinished && !it.isDeload && it.id != w.id && it.startedAt < w.startedAt && w.routineDayId != null && it.routineDayId == w.routineDayId
             }.maxByOrNull { it.startedAt }
             val prevVol = prev?.let { p ->
                 sets.filter { it.workoutId == p.id && Analytics.isEffectiveSet(it) }.sumOf { (it.weightKg * it.reps).toDouble() }.toFloat()
@@ -1332,7 +1342,7 @@ private fun SummaryCard(
         }
         // En çok gelişen hareket: dönem en iyi e1RM − önceki dönem en iyi e1RM
         fun best(ids: Set<Long>) = sets.asSequence()
-            .filter { it.workoutId in ids && Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..15 }
+            .filter { it.workoutId in ids && Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..12 }
             .filter { visibleIds == null || it.exerciseId in visibleIds }
             .groupBy { it.exerciseId }
             .mapValues { (_, l) -> l.maxOf { com.example.core.Calc.e1rm(it.weightKg, it.reps) } to l.first().exerciseName }

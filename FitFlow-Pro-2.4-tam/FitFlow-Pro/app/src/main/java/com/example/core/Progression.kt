@@ -523,28 +523,48 @@ object ProgressionEngine {
             ?.value?.first()?.weight ?: 0f
     }
 
-    /** Son seanslardan geriye doğru: kaç seanstır tahmini 1RM'de yeni zirve yok? */
+    /**
+     * 2.32: Seans bir ilerleme mi? Üçünden biri yeterli:
+     *  - tahmini 1RM rekoru, - daha ağır bir ağırlık, - aynı (ya da daha ağır) ağırlıkta daha fazla tekrar.
+     * Tekrar merdiveni ağırlık artınca tekrarı bilerek düşürür; yalnızca 1RM'e bakmak sahte "plato" üretiyordu.
+     */
+    fun isProgress(prior: List<SessionLog>, s: SessionLog): Boolean {
+        if (prior.isEmpty()) return true
+        val work = s.sets.filter { it.reps > 0 }
+        if (work.isEmpty()) return false
+        val priorSets = prior.flatMap { p -> p.sets.filter { it.reps > 0 } }
+        if (s.bestE1rm > prior.maxOf { it.bestE1rm } + 0.05f) return true
+        if (work.maxOf { it.weight } > (priorSets.maxOfOrNull { it.weight } ?: 0f) + 0.01f) return true
+        return work.any { cur ->
+            val bestRepsAtOrAbove = priorSets.filter { it.weight >= cur.weight - 0.01f }.maxOfOrNull { it.reps } ?: 0
+            cur.reps > bestRepsAtOrAbove
+        }
+    }
+
+    /** Son seanslardan geriye doğru: kaç seanstır ilerleme (1RM, ağırlık ya da tekrar rekoru) yok? */
     fun stallCount(sessions: List<SessionLog>): Int {
         val sorted = sessions.sortedBy { it.dateMillis }
         if (sorted.size < 2) return 0
-        val e = sorted.map { it.bestE1rm }
         var count = 0
-        for (i in e.indices.reversed()) {
+        for (i in sorted.indices.reversed()) {
             if (i == 0) break
-            val priorBest = e.subList(0, i).maxOrNull() ?: 0f
-            if (e[i] > priorBest + 0.05f) break
+            if (isProgress(sorted.subList(0, i), sorted[i])) break
             count++
         }
         return count
     }
 
-    /** Son iki seans da önceki en iyinin %3'ten fazla altındaysa gerileme var. */
+    /** Son iki seans da önceki en iyinin %3'ten fazla altında VE ağırlık artmamışsa gerileme var. */
     fun isRegressing(sessions: List<SessionLog>): Boolean {
         val sorted = sessions.sortedBy { it.dateMillis }
         if (sorted.size < 3) return false
-        val before = sorted.dropLast(2).maxOf { it.bestE1rm }
+        val prev = sorted.dropLast(2)
+        val before = prev.maxOf { it.bestE1rm }
         if (before <= 0f) return false
-        return sorted.takeLast(2).all { it.bestE1rm < before * 0.97f }
+        val beforeTop = prev.flatMap { it.sets }.maxOfOrNull { it.weight } ?: 0f
+        return sorted.takeLast(2).all { s ->
+            s.bestE1rm < before * 0.97f && (s.sets.maxOfOrNull { it.weight } ?: 0f) <= beforeTop + 0.01f
+        }
     }
 
     /** Izgaraya göre bir üst ulaşılabilir ağırlık (ör. 6 kg, adım 2.5 → 7.5). */

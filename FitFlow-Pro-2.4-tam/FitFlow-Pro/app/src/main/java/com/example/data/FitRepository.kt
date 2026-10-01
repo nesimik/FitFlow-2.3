@@ -378,13 +378,15 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         val unfinished = dao.getUnfinishedWorkouts()
         for (uw in unfinished) {
             val existingSets = dao.setsForWorkout(uw.id)
-            val completedCount = existingSets.count { it.isCompleted || it.reps > 0 || it.weightKg > 0f || it.durationSeconds > 0 }
+            val completedCount = existingSets.count { it.isCompleted }
             if (completedCount == 0) {
                 dao.deleteSetsForWorkout(uw.id)
                 dao.deletePrsForWorkout(uw.id)
                 dao.deleteWorkout(uw)
             } else {
-                val duration = maxOf(1, ((now - uw.startedAt) / 1000).toInt())
+                // Unutulan seans: geçen süre yerine set başına ~2,5 dk tahmini (en fazla geçen süre, en fazla 2 saat)
+                val elapsed = ((now - uw.startedAt) / 1000).toInt()
+                val duration = minOf(elapsed, 300 + completedCount * 150, 7200).coerceAtLeast(60)
                 finishWorkout(uw.id, duration, uw.notes, uw.feeling, uw.bodyWeightKg)
             }
         }
@@ -868,11 +870,16 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         durationSeconds: Int,
         notes: String,
         feeling: Int,
-        bodyWeightKg: Float
+        bodyWeightKg: Float,
+        /** true: işaretlenmemiş ama değer girilmiş setler de kaydedilir. Varsayılan: yalnızca işaretlenenler (2.32). */
+        keepUnticked: Boolean = false
     ): List<PrEntity> {
         val workout = dao.workoutById(workoutId) ?: return emptyList()
         val rawSets = dao.setsForWorkout(workoutId)
-        val validRawSets = rawSets.filter { it.isCompleted || it.reps > 0 || it.weightKg > 0f || it.durationSeconds > 0 }
+        // Seans planla ön doldurulur; işaretlenmeyen setler yapılmamıştır ve kaydedilmez.
+        val validRawSets = rawSets.filter {
+            it.isCompleted || (keepUnticked && (it.reps > 0 || it.weightKg > 0f || it.durationSeconds > 0))
+        }
         if (validRawSets.isEmpty()) {
             dao.deleteSetsForWorkout(workoutId)
             dao.deletePrsForWorkout(workoutId)

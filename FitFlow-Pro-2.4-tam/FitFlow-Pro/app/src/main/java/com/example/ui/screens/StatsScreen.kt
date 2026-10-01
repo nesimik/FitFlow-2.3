@@ -212,7 +212,7 @@ private fun OverviewTab(vm: AppViewModel, nav: NavHostController) {
             FitCard {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Bu hafta", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    Text("geçen haftaya göre", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+                    Text("geçen haftanın aynı gününe göre", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

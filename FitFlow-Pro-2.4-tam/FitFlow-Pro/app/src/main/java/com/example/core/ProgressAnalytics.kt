@@ -88,7 +88,7 @@ data class TrainingLoad(
 
     val advice: String
         get() = when {
-            chronicWeekly <= 0f -> "Birkaç hafta daha veri biriktiğinde yüklenme dengesi hesaplanacak."
+            chronicWeekly <= 0f -> "En az 3 haftalık düzenli kayıt biriktiğinde yüklenme dengesi hesaplanacak."
             ratio < 0.75f -> "Son hafta normalinin altında kaldı. Hacmi kademeli artırabilirsin."
             ratio <= 1.3f -> "Hacim artışı sürdürülebilir bandın içinde — böyle devam."
             ratio <= 1.5f -> "Hacim son haftada belirgin arttı. Formu ve toparlanmayı takip et."
@@ -379,7 +379,12 @@ object ProgressAnalytics {
 
         val acute = volumeBetween(7, 0)
         val chronicTotal = volumeBetween(28, 0)
-        val chronicWeekly = chronicTotal / 4f
+        // 2.32: 4 haftadan az geçmiş (yeni kullanıcı / aradan dönüş) varsa gerçek hafta sayısına böl;
+        // 3 haftadan az veri varsa oran hesaplanmaz (yanlış "aşırı yüklenme" uyarısı vermesin).
+        val firstInWindow = workouts.filter { it.startedAt >= now - 28 * DAY }.minOfOrNull { it.startedAt }
+        val coveredDays = firstInWindow?.let { ((now - it) / DAY).toInt() + 1 } ?: 0
+        val enough = coveredDays >= 21
+        val chronicWeekly = if (coveredDays <= 0 || !enough) 0f else chronicTotal / (coveredDays.coerceIn(7, 28) / 7f)
         val acuteSets = workouts.filter { it.startedAt >= now - 7 * DAY }
             .sumOf { (byWorkout[it.id] ?: emptyList()).size }
 
@@ -387,7 +392,7 @@ object ProgressAnalytics {
             acuteVolume = acute,
             chronicWeekly = chronicWeekly,
             acuteSets = acuteSets,
-            ratio = if (chronicWeekly <= 0f) 0f else acute / chronicWeekly
+            ratio = if (chronicWeekly <= 0f || !enough) 0f else acute / chronicWeekly
         )
     }
 
@@ -403,59 +408,52 @@ object ProgressAnalytics {
         minDays: Int = 21
     ): List<StagnantLift> {
         val now = System.currentTimeMillis()
-        return sets
-            .filter { Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps > 0 }
-            .groupBy { it.exerciseId }
-            .mapNotNull { (exId, list) ->
-                val bySession = list.groupBy { it.workoutId }
-                if (bySession.size < minSessions) return@mapNotNull null
-                val sessionBest = bySession.map { (_, l) ->
-                    l.minOf { it.performedAt } to l.maxOf { Calc.e1rm(it.weightKg, it.reps) }
-                }.sortedBy { it.first }
-
-                val best = sessionBest.maxByOrNull { it.second } ?: return@mapNotNull null
-                val latest = sessionBest.last()
-                val daysSinceBest = daysBetween(best.first, now)
-                if (daysSinceBest < minDays) return@mapNotNull null
-                val sessionsSince = sessionBest.count { it.first > best.first }
-                if (sessionsSince < 2) return@mapNotNull null
-
-                StagnantLift(
-                    exerciseId = exId,
-                    name = list.first().exerciseName,
-                    bestE1rm = best.second,
-                    latestE1rm = latest.second,
-                    daysSinceBest = daysSinceBest,
-                    sessionsSinceBest = sessionsSince
-                )
-            }
-            .sortedByDescending { it.daysSinceBest }
+        return sessionsByExercise(sets).mapNotNull { (exId, pair) ->
+            val (name, logs) = pair
+            if (logs.size < minSessions) return@mapNotNull null
+            // Son ilerleme seansı (1RM, ağırlık ya da tekrar rekoru)
+            val lastProgress = logs.indices.lastOrNull { i -> ProgressionEngine.isProgress(logs.subList(0, i), logs[i]) } ?: 0
+            val daysSince = daysBetween(logs[lastProgress].dateMillis, now)
+            if (daysSince < minDays) return@mapNotNull null
+            val sessionsSince = logs.size - 1 - lastProgress
+            if (sessionsSince < 2) return@mapNotNull null
+            StagnantLift(
+                exerciseId = exId,
+                name = name,
+                bestE1rm = logs.maxOf { it.bestE1rm },
+                latestE1rm = logs.last().bestE1rm,
+                daysSinceBest = daysSince,
+                sessionsSinceBest = sessionsSince
+            )
+        }.sortedByDescending { it.daysSinceBest }
     }
 
-    /** Son 3 seansta 1RM artışı olan hareketler — "iyi gidiyor" listesi. */
+    /** Son seansında ilerleme kaydedilen hareketler — "iyi gidiyor" listesi. */
     fun improving(sets: List<WorkoutSetEntity>, minSessions: Int = 3): List<StagnantLift> =
-        sets
-            .filter { Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps > 0 }
+        sessionsByExercise(sets).mapNotNull { (exId, pair) ->
+            val (name, logs) = pair
+            if (logs.size < minSessions) return@mapNotNull null
+            val latest = logs.last()
+            if (!ProgressionEngine.isProgress(logs.dropLast(1), latest)) return@mapNotNull null
+            StagnantLift(
+                exerciseId = exId,
+                name = name,
+                bestE1rm = logs.maxOf { it.bestE1rm },
+                latestE1rm = latest.bestE1rm,
+                daysSinceBest = daysBetween(latest.dateMillis, System.currentTimeMillis()),
+                sessionsSinceBest = 0
+            )
+        }.sortedByDescending { it.bestE1rm }
+
+    /** Hareket → (ad, tarihe göre sıralı seans kayıtları). */
+    private fun sessionsByExercise(sets: List<WorkoutSetEntity>): Map<Long, Pair<String, List<SessionLog>>> =
+        sets.filter { Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps > 0 }
             .groupBy { it.exerciseId }
-            .mapNotNull { (exId, list) ->
-                val bySession = list.groupBy { it.workoutId }
-                if (bySession.size < minSessions) return@mapNotNull null
-                val sessionBest = bySession.map { (_, l) ->
-                    l.minOf { it.performedAt } to l.maxOf { Calc.e1rm(it.weightKg, it.reps) }
-                }.sortedBy { it.first }
-                val latest = sessionBest.last()
-                val previousBest = sessionBest.dropLast(1).maxOfOrNull { it.second } ?: return@mapNotNull null
-                if (latest.second <= previousBest + 0.01f) return@mapNotNull null
-                StagnantLift(
-                    exerciseId = exId,
-                    name = list.first().exerciseName,
-                    bestE1rm = latest.second,
-                    latestE1rm = latest.second,
-                    daysSinceBest = daysBetween(latest.first, System.currentTimeMillis()),
-                    sessionsSinceBest = 0
-                )
+            .mapValues { (_, list) ->
+                list.first().exerciseName to list.groupBy { it.workoutId }.values
+                    .map { l -> SessionLog(l.minOf { it.performedAt }, l.map { LoggedSet(it.weightKg, it.reps, it.rpe) }) }
+                    .sortedBy { it.dateMillis }
             }
-            .sortedByDescending { it.bestE1rm }
 
     /* -------------------------------- Güç profili --------------------------- */
 
@@ -477,11 +475,13 @@ object ProgressAnalytics {
 
     private val liftDefs = listOf(
         LiftDef("squat", "Squat", listOf("barbell squat", "squat"), listOf(0.75f, 1.1f, 1.45f, 1.9f, 2.4f), false,
-            excludes = listOf("goblet", "split", "pistol", "sissy", "bodyweight", "wall sit", "cossack")),
+            excludes = listOf("goblet", "split", "pistol", "sissy", "bodyweight", "wall sit", "cossack",
+                // 2.32: makine / yönlendirmeli varyasyonlar serbest squat değildir (seviyeyi şişirir)
+                "hack", "pendulum", "smith", "machine", "makine", "leg press", "belt", "landmine", "jump", "kettlebell")),
         LiftDef("bench", "Bench Press", listOf("bench press"), listOf(0.5f, 0.75f, 1.0f, 1.35f, 1.75f), true,
-            excludes = listOf("close grip", "incline", "decline"), dumbbellFactor = 0.85f),
+            excludes = listOf("close grip", "incline", "decline", "smith", "machine", "makine"), dumbbellFactor = 0.85f),
         LiftDef("deadlift", "Deadlift", listOf("deadlift"), listOf(1.0f, 1.35f, 1.75f, 2.2f, 2.75f), false,
-            excludes = listOf("romanian", "rdl", "stiff", "single leg")),
+            excludes = listOf("romanian", "rdl", "stiff", "single leg", "trap", "hex", "kettlebell", "smith")),
         // RDL klasik deadlift'ten doğası gereği hafiftir: kendi eşik ve beklenen oranıyla değerlendirilir.
         LiftDef("rdl", "Romanian Deadlift", listOf("romanian", "rdl"), listOf(0.8f, 1.1f, 1.4f, 1.8f, 2.2f), false,
             dumbbellFactor = 0.9f),
@@ -506,7 +506,8 @@ object ProgressAnalytics {
         isMale: Boolean
     ): List<LiftStandard> {
         if (bodyWeightKg <= 0f) return emptyList()
-        val valid = sets.filter { Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps > 0 }
+        // 2.32: 12 tekrarın üstünde 1RM tahmini güvenilmez (seviyeyi şişirir)
+        val valid = sets.filter { Analytics.isEffectiveSet(it) && it.weightKg > 0f && it.reps in 1..12 }
         if (valid.isEmpty()) return emptyList()
 
         return liftDefs.mapNotNull { def ->

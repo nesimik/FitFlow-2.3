@@ -546,7 +546,8 @@ object MuscleMap {
                 Activation(listOf(LATS), listOf(BICEPS, UPPER_BACK))
             has("row", "kürek") -> Activation(listOf(LATS, UPPER_BACK), listOf(BICEPS, REAR_DELT))
             has("shrug", "trapez") -> Activation(listOf(TRAPS))
-            has("hyperextension", "bel", "back extension") -> Activation(listOf(LOWER_BACK), listOf(GLUTES))
+            // "bel" kelime olarak aranır: "dumbbell"/"kettlebell" içinde geçtiği için yanlış eşleşiyordu
+            has("hyperextension", "back extension") || n.split(" ", "-").any { it == "bel" } -> Activation(listOf(LOWER_BACK), listOf(GLUTES))
             has("squat") -> Activation(listOf(QUADS, GLUTES), listOf(HAMSTRINGS, LOWER_BACK))
             has("lunge", "split squat", "step up") -> Activation(listOf(QUADS, GLUTES), listOf(HAMSTRINGS))
             has("leg press") -> Activation(listOf(QUADS, GLUTES))

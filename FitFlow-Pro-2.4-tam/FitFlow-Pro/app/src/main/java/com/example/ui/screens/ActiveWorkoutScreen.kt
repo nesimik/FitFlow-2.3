@@ -403,9 +403,9 @@ fun ActiveWorkoutScreen(vm: AppViewModel, nav: NavHostController) {
             elapsed = elapsed,
             review = review,
             onDismiss = { showFinish = false },
-            onFinish = { notes, feeling ->
+            onFinish = { notes, feeling, keep ->
                 showFinish = false
-                vm.finishWorkout(notes, feeling) { nav.popBackStack() }
+                vm.finishWorkout(notes, feeling, keep) { nav.popBackStack() }
             }
         )
     }
@@ -592,6 +592,16 @@ private fun ExerciseLogCard(
 ) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
+    var askRemove by remember { mutableStateOf(false) }
+    if (askRemove) {
+        ConfirmDialog(
+            title = "Hareketi çıkar",
+            text = "${se.name} ve bu seansta yaptığın ${se.completedSets} set silinecek. Emin misin?",
+            confirmLabel = "Çıkar", destructive = true,
+            onConfirm = { askRemove = false; onRemoveExercise() },
+            onDismiss = { askRemove = false }
+        )
+    }
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameText by remember(se.name) { mutableStateOf(se.name) }
     val isDuration = se.trackingType == ExerciseEntity.TRACK_DURATION
@@ -705,6 +715,9 @@ private fun ExerciseLogCard(
                         color = MaterialTheme.fit.muted,
                         maxLines = 1
                     )
+                    if (se.note.isNotBlank()) {
+                        Text("📝 ${se.note}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.accent, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
             Text(
@@ -772,7 +785,7 @@ private fun ExerciseLogCard(
                     )
                     DropdownMenuItem(
                         text = { Text("Hareketi çıkar") },
-                        onClick = { menu = false; onRemoveExercise() },
+                        onClick = { menu = false; if (se.completedSets > 0) askRemove = true else onRemoveExercise() },
                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.fit.danger) }
                     )
                 }
@@ -1058,6 +1071,16 @@ private fun SetRow(
     onDelete: () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
+    var askDelete by remember { mutableStateOf(false) }
+    if (askDelete) {
+        ConfirmDialog(
+            title = "Seti sil",
+            text = "Tamamlanmış ${set.setNumber}. set (${set.weightKg.trimNum()} kg × ${set.reps}) silinecek. Emin misin?",
+            confirmLabel = "Sil", destructive = true,
+            onConfirm = { askDelete = false; onDelete() },
+            onDismiss = { askDelete = false }
+        )
+    }
     val accent = MaterialTheme.fit.accent
     val bg = when {
         set.isCompleted -> MaterialTheme.fit.success.copy(alpha = 0.10f)
@@ -1116,7 +1139,7 @@ private fun SetRow(
                 )
                 DropdownMenuItem(
                     text = { Text("Seti sil") },
-                    onClick = { menu = false; onDelete() },
+                    onClick = { menu = false; if (set.isCompleted) askDelete = true else onDelete() },
                     leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.fit.danger) }
                 )
             }
@@ -1431,9 +1454,10 @@ private fun FinishDialog(
     elapsed: Int,
     review: SessionReview,
     onDismiss: () -> Unit,
-    onFinish: (String, Int) -> Unit
+    onFinish: (String, Int, Boolean) -> Unit
 ) {
     var notes by remember { mutableStateOf("") }
+    var keepUnticked by remember { mutableStateOf(false) }
     var feeling by remember { mutableStateOf(0) }
     val faces = listOf("😵" to 1, "🙁" to 2, "😐" to 3, "🙂" to 4, "🔥" to 5)
 
@@ -1455,17 +1479,27 @@ private fun FinishDialog(
                 review.volumeDeltaPct?.let { pct ->
                     val c = if (pct >= 0) MaterialTheme.fit.success else Palette.warning
                     Text(
-                        "Önceki aynı güne göre hacim: ${if (pct >= 0) "+" else ""}$pct%",
+                        "Önceki aynı güne göre hacim: ${if (pct >= 0) "+" else "−"}%${kotlin.math.abs(pct)}",
                         style = MaterialTheme.typography.labelLarge,
                         color = c
                     )
                 }
                 if (doneSets < totalSets) {
-                    Text(
-                        "${totalSets - doneSets} set işaretlenmedi; bunlar kaydedilmeyecek.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Palette.warning
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.warning.copy(alpha = 0.10f))
+                            .clickable { keepUnticked = !keepUnticked }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(checked = keepUnticked, onCheckedChange = { keepUnticked = it })
+                        Column(Modifier.weight(1f)) {
+                            Text("${totalSets - doneSets} set işaretlenmedi", style = MaterialTheme.typography.labelLarge, color = Palette.warning)
+                            Text(
+                                if (keepUnticked) "Değer girilmiş olanlar yapılmış sayılıp kaydedilecek."
+                                else "Yapılmadı sayılır, kaydedilmez. Yaptıysan işaretle.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted
+                            )
+                        }
+                    }
                 }
                 if (review.next.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1522,7 +1556,7 @@ private fun FinishDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onFinish(notes, feeling) }) {
+            TextButton(onClick = { onFinish(notes, feeling, keepUnticked) }) {
                 Text("Bitir ve kaydet", color = MaterialTheme.fit.success, style = MaterialTheme.typography.titleMedium)
             }
         },

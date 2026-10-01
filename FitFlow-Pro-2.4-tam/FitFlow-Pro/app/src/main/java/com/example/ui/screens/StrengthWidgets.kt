@@ -303,7 +303,7 @@ private fun GoalSection(best: Float, goal: Float?, trend: StrengthInsights.Trend
                 Icon(Icons.Default.Flag, null, tint = gold, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Hedef ${goal.kg()}", style = MaterialTheme.typography.labelLarge, color = gold, modifier = Modifier.weight(1f))
-                Text("${(best / goal * 100).roundToInt().coerceAtMost(100)}%", style = MaterialTheme.typography.labelLarge.mono(), color = gold)
+                Text("%${(best / goal * 100).roundToInt().coerceAtMost(100)}", style = MaterialTheme.typography.labelLarge.mono(), color = gold)
             }
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(gold.copy(alpha = 0.18f))) {
@@ -415,7 +415,7 @@ internal fun RepMaxCard(name: String, e1rm: Float, rows: List<StrengthInsights.R
             ) {
                 Text("${r.reps}", style = MaterialTheme.typography.bodyMedium.mono().copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(0.8f))
                 Text(r.predicted.kg(), style = MaterialTheme.typography.bodyMedium.mono(), modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
-                Text("${r.pct}%", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.muted, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                Text("%${r.pct}", style = MaterialTheme.typography.labelMedium.mono(), color = MaterialTheme.fit.muted, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
                 Text(
                     r.bestActual?.kg() ?: "—", style = MaterialTheme.typography.bodyMedium.mono(),
                     color = if (beat) MaterialTheme.fit.success else MaterialTheme.fit.muted,
