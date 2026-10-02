@@ -5,6 +5,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -31,8 +32,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -46,11 +50,11 @@ import com.example.ui.AppViewModel
 import com.example.ui.components.ChoiceChip
 import com.example.ui.components.FitCard
 import com.example.ui.components.FitTextField
-import com.example.ui.components.KeyValueRow
 import com.example.ui.components.OverlineText
-import com.example.ui.components.PillTabs
 import com.example.ui.theme.Palette
 import com.example.ui.theme.fit
+import com.example.ui.theme.mono
+import kotlin.math.roundToInt
 
 @Composable
 fun ToolsScreen(vm: AppViewModel, nav: NavHostController) {
@@ -61,7 +65,7 @@ fun ToolsScreen(vm: AppViewModel, nav: NavHostController) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Hesaplayıcılar", "Antrenman planlaman için pratik araçlar", onBack = { nav.popBackStack() })
         Column(Modifier.padding(horizontal = 16.dp)) {
-            PillTabs(listOf("1RM", "Plaka", "Isınma", "Vücut"), tab) { tab = it }
+            TkSegmented(listOf("1RM", "Plaka", "Isınma", "Vücut"), tab) { tab = it }
         }
         Spacer(Modifier.height(14.dp))
         stateHolder.SaveableStateProvider("tool_$tab") {
@@ -74,6 +78,8 @@ fun ToolsScreen(vm: AppViewModel, nav: NavHostController) {
         }
     }
 }
+
+private val toolListPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)
 
 /* ---------------------------------- 1RM ------------------------------------ */
 
@@ -122,13 +128,15 @@ private fun OneRmTool(vm: AppViewModel) {
     val selectedLift = lifts.firstOrNull { it.exerciseId == selectedEx }
 
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+        contentPadding = toolListPadding,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             FitCard {
+                TkCardTitle("1RM hesaplayıcı", "Bir setin ağırlık ve tekrarından tek tekrarlık maksimumunu tahmin eder.")
+                Spacer(Modifier.height(12.dp))
                 if (lifts.isNotEmpty()) {
-                    OverlineText("Hareketlerinden doldur")
+                    Text("Hareketlerinden doldur", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
                     Spacer(Modifier.height(7.dp))
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),
@@ -146,7 +154,7 @@ private fun OneRmTool(vm: AppViewModel) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "En iyi set: ${selectedLift.weightKg.trimNum()} kg × ${selectedLift.reps} · ${formatDateShort(selectedLift.performedAt)}",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelMedium.mono(),
                             color = MaterialTheme.fit.muted
                         )
                     }
@@ -159,66 +167,100 @@ private fun OneRmTool(vm: AppViewModel) {
             }
         }
         item {
-            FitCard(container = MaterialTheme.fit.accent.copy(alpha = 0.10f), border = MaterialTheme.fit.accent.copy(alpha = 0.3f)) {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    OverlineText("TAHMİNİ 1 TEKRAR MAKSİMUM", MaterialTheme.fit.accent)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (e1rm > 0f) e1rm.kg() else "—",
-                        style = MaterialTheme.typography.displayMedium,
-                        color = MaterialTheme.fit.accent
-                    )
-                    Text(
-                        "4 formülün ortalaması",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.fit.muted
-                    )
+            FitCard {
+                OverlineText("Tahmini 1 tekrar maksimum", MaterialTheme.fit.accent)
+                Spacer(Modifier.height(6.dp))
+                if (e1rm > 0f) {
+                    TkHero(e1rm.trimNum(), "kg", MaterialTheme.fit.accent, "4 formülün ortalaması · ${w.trimNum()} kg × $r")
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TkStat("Epley", Calc.epley(w, r).kg(), Modifier.weight(1f))
+                        TkStat("Brzycki", Calc.brzycki(w, r).kg(), Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TkStat("Lombardi", Calc.lombardi(w, r).kg(), Modifier.weight(1f))
+                        TkStat("O'Conner", Calc.oconner(w, r).kg(), Modifier.weight(1f))
+                    }
+                } else {
+                    TkHero("—", color = MaterialTheme.fit.muted, caption = "Ağırlık ve tekrar gir")
                 }
             }
         }
         if (e1rm > 0f) {
             item {
                 FitCard {
-                    OverlineText("Formüllere göre")
-                    Spacer(Modifier.height(8.dp))
-                    KeyValueRow("Epley", Calc.epley(w, r).kg())
-                    KeyValueRow("Brzycki", Calc.brzycki(w, r).kg())
-                    KeyValueRow("Lombardi", Calc.lombardi(w, r).kg())
-                    KeyValueRow("O'Conner", Calc.oconner(w, r).kg())
-                }
-            }
-            item {
-                FitCard {
-                    OverlineText("Yüzde tablosu")
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Antrenman ağırlığını planlarken kullan. Hipertrofi genelde %65-80, güç %85+ aralığında çalışılır.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.fit.muted
+                    TkCardTitle(
+                        "Yüzde tablosu",
+                        "Antrenman ağırlığını planlarken kullan. Hipertrofi genelde %65-80, güç %85+ aralığında çalışılır."
                     )
                     Spacer(Modifier.height(10.dp))
-                    Calc.percentTable(e1rm).forEach { (pct, value) ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        Text("%1RM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(0.8f))
+                        Text("Ağırlık", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+                        Text("Tekrar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+                    }
+                    Calc.percentTable(e1rm).forEachIndexed { i, (pct, value) ->
                         val repsLabel = when {
-                            pct >= 95 -> "1-2 tekrar"
-                            pct >= 90 -> "3-4 tekrar"
-                            pct >= 85 -> "5-6 tekrar"
-                            pct >= 80 -> "7-8 tekrar"
-                            pct >= 75 -> "9-10 tekrar"
-                            pct >= 70 -> "11-12 tekrar"
-                            else -> "13+ tekrar"
+                            pct >= 95 -> "1-2"
+                            pct >= 90 -> "3-4"
+                            pct >= 85 -> "5-6"
+                            pct >= 80 -> "7-8"
+                            pct >= 75 -> "9-10"
+                            pct >= 70 -> "11-12"
+                            else -> "13+"
+                        }
+                        val zoneColor = when {
+                            pct >= 85 -> MaterialTheme.fit.danger
+                            pct >= 65 -> MaterialTheme.fit.accent
+                            else -> MaterialTheme.fit.success
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (i % 2 == 0) MaterialTheme.fit.elevated.copy(alpha = 0.45f) else Color.Transparent)
+                                .padding(horizontal = 6.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("%$pct", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(52.dp), color = MaterialTheme.fit.accent)
-                            Text(value.kg(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            Text(repsLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                            Row(Modifier.weight(0.8f), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.width(3.dp).height(14.dp).clip(RoundedCornerShape(2.dp)).background(zoneColor))
+                                Spacer(Modifier.width(8.dp))
+                                Text("%$pct", style = MaterialTheme.typography.bodyMedium.mono().copy(fontWeight = FontWeight.SemiBold), color = zoneColor)
+                            }
+                            Text(
+                                value.kg(),
+                                style = MaterialTheme.typography.bodyMedium.mono().copy(fontWeight = FontWeight.SemiBold),
+                                modifier = Modifier.weight(1.2f),
+                                textAlign = TextAlign.End
+                            )
+                            Text(
+                                repsLabel,
+                                style = MaterialTheme.typography.labelMedium.mono(),
+                                color = MaterialTheme.fit.muted,
+                                modifier = Modifier.weight(1.2f),
+                                textAlign = TextAlign.End
+                            )
                         }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ZoneLegend(MaterialTheme.fit.danger, "güç")
+                        ZoneLegend(MaterialTheme.fit.accent, "hipertrofi")
+                        ZoneLegend(MaterialTheme.fit.success, "dayanıklılık / ısınma")
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ZoneLegend(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(color))
+        Spacer(Modifier.width(4.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
     }
 }
 
@@ -237,14 +279,16 @@ private fun PlateTool(vm: AppViewModel) {
     val shown = result.best
 
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+        contentPadding = toolListPadding,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             FitCard {
+                TkCardTitle("Plaka hesaplayıcı", "Hedef ağırlık için bara her iki yana takılacak plakaları bulur.")
+                Spacer(Modifier.height(12.dp))
                 FitTextField(target, { target = it }, "Hedef toplam ağırlık (kg)", keyboardType = KeyboardType.Decimal)
                 Spacer(Modifier.height(12.dp))
-                OverlineText("Bar ağırlığı")
+                Text("Bar ağırlığı", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
                 Spacer(Modifier.height(7.dp))
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
@@ -254,18 +298,16 @@ private fun PlateTool(vm: AppViewModel) {
                         ChoiceChip("${v.trimNum()} kg", bar == v, { bar = v })
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Plakaların: " + userPlates.filter { it > 0f }.sortedDescending().joinToString(" · ") { it.trimNum() } + " kg (Ayarlar › Ekipman)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.fit.muted
-                )
+                Spacer(Modifier.height(12.dp))
+                Text("Plakaların · Ayarlar › Ekipman", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+                Spacer(Modifier.height(6.dp))
+                PlateChips(userPlates.filter { it > 0f }.distinct().sortedDescending())
             }
         }
         item {
             FitCard {
                 OverlineText("Her iki tarafa takılacak")
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 when {
                     total <= 0f -> Text(
                         "Hedef ağırlığı gir.",
@@ -278,14 +320,28 @@ private fun PlateTool(vm: AppViewModel) {
                         color = MaterialTheme.fit.warning
                     )
                     else -> {
-                        if (result.exact == null) {
+                        val exact = result.exact != null
+                        if (shown != null) {
+                            TkHero(
+                                shown.totalKg.trimNum(), "kg",
+                                if (exact) MaterialTheme.fit.accent else MaterialTheme.fit.warning,
+                                if (exact) "Ulaşılan ağırlık · tam kurulum" else "Ulaşılan ağırlık · hedef ${total.trimNum()} kg"
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        if (!exact) {
                             val options = listOfNotNull(result.below?.totalKg, result.above?.totalKg).distinct()
                             Text(
                                 "Tam kurulamaz — en yakın: " + options.joinToString(" / ") { "${it.trimNum()} kg" },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.fit.warning
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.fit.warning,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.fit.warning.copy(alpha = 0.08f))
+                                    .padding(10.dp)
                             )
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(12.dp))
                         }
                         if (shown == null || shown.perSide.isEmpty()) {
                             Text(
@@ -295,17 +351,42 @@ private fun PlateTool(vm: AppViewModel) {
                             )
                         } else {
                             PlateStack(shown.perSide)
-                            Spacer(Modifier.height(14.dp))
-                            KeyValueRow("Tek taraf", shown.perSide.joinToString(" + ") { it.trimNum() } + " = " + shown.perSide.sum().kg())
-                            KeyValueRow("Ulaşılan ağırlık", shown.totalKg.kg(), if (result.exact != null) MaterialTheme.fit.success else MaterialTheme.fit.warning)
+                            Spacer(Modifier.height(10.dp))
+                            PlateChips(shown.perSide)
+                            Spacer(Modifier.height(12.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TkStat("Tek taraf", shown.perSide.sum().kg(), Modifier.weight(1f))
+                                TkStat("Plaka", "${shown.perSide.size} × 2", Modifier.weight(1f))
+                                TkStat("Bar", bar.kg(), Modifier.weight(1f))
+                            }
                         }
-                        if (result.exact == null) {
+                        if (!exact) {
                             val other = listOfNotNull(result.below, result.above).firstOrNull { it != shown }
                             if (other != null) {
-                                KeyValueRow(
-                                    "Alternatif ${other.totalKg.trimNum()} kg",
-                                    if (other.perSide.isEmpty()) "sadece bar" else other.perSide.joinToString(" + ") { it.trimNum() }
-                                )
+                                Spacer(Modifier.height(12.dp))
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.fit.elevated.copy(alpha = 0.6f))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Alternatif", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                                        Text(
+                                            if (other.perSide.isEmpty()) "sadece bar" else "her yana " + other.perSide.joinToString(" + ") { it.trimNum() },
+                                            style = MaterialTheme.typography.labelMedium.mono(),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Text(
+                                        other.totalKg.kg(),
+                                        style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.fit.accent
+                                    )
+                                }
                             }
                         }
                     }
@@ -315,40 +396,91 @@ private fun PlateTool(vm: AppViewModel) {
     }
 }
 
+/** Bar ucu + plakalar: yükseklik plakanın ağırlığıyla orantılı. */
 @Composable
 private fun PlateStack(plates: List<Float>) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val sleeve = MaterialTheme.fit.muted.copy(alpha = 0.5f)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.fit.elevated.copy(alpha = 0.45f))
+            .padding(horizontal = 12.dp, vertical = 12.dp)
     ) {
-        plates.forEach { p ->
-            Box(
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Bar gövdesi ve yaka
+            Box(Modifier.width(22.dp).height(8.dp).clip(RoundedCornerShape(2.dp)).background(sleeve))
+            Box(Modifier.width(6.dp).height(22.dp).clip(RoundedCornerShape(2.dp)).background(sleeve))
+            Spacer(Modifier.width(4.dp))
+            plates.forEach { p ->
+                val c = plateColor(p)
+                Box(
+                    Modifier
+                        .padding(end = 3.dp)
+                        .width(26.dp)
+                        .height((34 + p * 2.4f).dp.coerceAtMost(110.dp))
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(c),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        p.trimNum(),
+                        style = MaterialTheme.typography.labelSmall.mono(),
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
+            }
+            Box(Modifier.width(28.dp).height(8.dp).clip(RoundedCornerShape(2.dp)).background(sleeve))
+        }
+    }
+}
+
+/** Plaka çipleri: aynı plakalar "2× 20" şeklinde gruplanır, renk plaka boyutuna göre. */
+@Composable
+private fun PlateChips(plates: List<Float>) {
+    if (plates.isEmpty()) {
+        Text("Plaka tanımlı değil", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+        return
+    }
+    val grouped = plates.groupBy { it }.entries.sortedByDescending { it.key }
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        grouped.forEach { (p, list) ->
+            val c = plateColor(p)
+            Row(
                 Modifier
-                    .width(30.dp)
-                    .height((34 + p * 2.4f).dp.coerceAtMost(110.dp))
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(plateColor(p)),
-                contentAlignment = Alignment.Center
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(c.copy(alpha = 0.14f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(c))
+                Spacer(Modifier.width(5.dp))
                 Text(
-                    p.trimNum(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = androidx.compose.ui.graphics.Color.White,
-                    textAlign = TextAlign.Center
+                    (if (list.size > 1) "${list.size}× " else "") + p.trimNum(),
+                    style = MaterialTheme.typography.labelMedium.mono().copy(fontWeight = FontWeight.SemiBold),
+                    color = c
                 )
             }
         }
     }
 }
 
-private fun plateColor(p: Float) = when (p) {
+@Composable
+private fun plateColor(p: Float): Color = when (p) {
     25f -> Palette.danger
     20f -> Palette.info
     15f -> Palette.warning
     10f -> Palette.success
     5f -> Palette.violet
-    else -> androidx.compose.ui.graphics.Color(0xFF64748B)
+    else -> MaterialTheme.fit.muted
 }
 
 /* --------------------------------- Isınma ---------------------------------- */
@@ -375,17 +507,16 @@ private fun WarmupTool(vm: AppViewModel) {
     }
 
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+        contentPadding = toolListPadding,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             FitCard {
+                TkCardTitle("Isınma piramidi", "Çalışma setine kadar kademeli ısınma setleri önerir.")
+                Spacer(Modifier.height(12.dp))
                 FitTextField(working, { working = it }, "Çalışma ağırlığın (kg)", keyboardType = KeyboardType.Decimal)
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ChoiceChip("Barbell (${barDefault.trimNum()} kg bar)", barbell, { barbell = true })
-                    ChoiceChip("Diğer", !barbell, { barbell = false })
-                }
+                TkSegmented(listOf("Barbell · ${barDefault.trimNum()} kg", "Diğer"), if (barbell) 0 else 1) { barbell = it == 0 }
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Bileşik hareketlerde (squat, bench, deadlift) sakatlanmayı önlemek ve sinir sistemini hazırlamak için kademeli ısınma önerilir." +
@@ -397,48 +528,81 @@ private fun WarmupTool(vm: AppViewModel) {
         }
         item {
             FitCard {
-                OverlineText("Isınma piramidi")
-                Spacer(Modifier.height(10.dp))
-                scheme.forEachIndexed { i, (weight, reps) ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.fit.accent.copy(alpha = 0.14f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("${i + 1}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.accent)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(weight.kg(), style = MaterialTheme.typography.titleMedium)
-                            if (barbell) {
-                                val perSide = PlateSolver.solve(weight, barDefault, userPlates).exact?.perSide
-                                if (perSide != null) {
-                                    Text(
-                                        if (perSide.isEmpty()) "sadece bar" else "her yana: " + perSide.joinToString(" + ") { it.trimNum() },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.fit.muted
-                                    )
-                                }
-                            }
-                        }
-                        Text("$reps tekrar", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted)
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OverlineText("Setler", modifier = Modifier.weight(1f))
+                    Text("${scheme.size} ısınma + 1 çalışma", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.fit.success.copy(alpha = 0.10f))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Çalışma seti", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    Text(w.kg(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.fit.success)
+                scheme.forEachIndexed { i, (weight, reps) ->
+                    if (i > 0) Spacer(Modifier.height(6.dp))
+                    val strength = 0.35f + 0.65f * (i + 1) / (scheme.size + 1).toFloat()
+                    val perSide = if (barbell) PlateSolver.solve(weight, barDefault, userPlates).exact?.perSide else null
+                    WarmupRow(
+                        index = "${i + 1}",
+                        weightText = weight.kg(),
+                        sub = perSide?.let { if (it.isEmpty()) "sadece bar" else "her yana: " + it.joinToString(" + ") { p -> p.trimNum() } },
+                        pct = if (w > 0f) (weight / w * 100f).roundToInt() else null,
+                        reps = "$reps tekrar",
+                        stripe = MaterialTheme.fit.accent.copy(alpha = strength),
+                        valueColor = MaterialTheme.colorScheme.onSurface
+                    )
                 }
+                Spacer(Modifier.height(6.dp))
+                WarmupRow(
+                    index = "Ç",
+                    weightText = w.kg(),
+                    sub = "Çalışma seti",
+                    pct = null,
+                    reps = "",
+                    stripe = MaterialTheme.fit.success,
+                    valueColor = MaterialTheme.fit.success,
+                    highlight = true
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WarmupRow(
+    index: String,
+    weightText: String,
+    sub: String?,
+    pct: Int?,
+    reps: String,
+    stripe: Color,
+    valueColor: Color,
+    highlight: Boolean = false
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (highlight) MaterialTheme.fit.success.copy(alpha = 0.10f) else MaterialTheme.fit.elevated.copy(alpha = 0.45f)),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.width(4.dp).fillMaxHeight().background(stripe))
+        Spacer(Modifier.width(12.dp))
+        Text(
+            index,
+            style = MaterialTheme.typography.labelLarge.mono(),
+            color = MaterialTheme.fit.muted,
+            modifier = Modifier.width(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            Text(weightText, style = MaterialTheme.typography.titleMedium.mono().copy(fontWeight = FontWeight.SemiBold), color = valueColor)
+            if (!sub.isNullOrBlank()) {
+                Text(sub, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Column(Modifier.padding(end = 12.dp), horizontalAlignment = Alignment.End) {
+            if (reps.isNotBlank()) {
+                Text(reps, style = MaterialTheme.typography.labelLarge.mono(), color = MaterialTheme.colorScheme.onSurface)
+            }
+            if (pct != null) {
+                Text("%$pct", style = MaterialTheme.typography.labelSmall.mono(), color = MaterialTheme.fit.muted)
             }
         }
     }
@@ -468,12 +632,28 @@ private fun BodyTool(vm: AppViewModel) {
     val labels = listOf("Hareketsiz", "Hafif", "Orta", "Aktif", "Çok aktif")
     val tdee = Calc.tdee(bmr, factors[activity.coerceIn(0, factors.lastIndex)])
 
+    val zones = listOf(
+        TkZone(18.5f, Palette.info, "Zayıf"),
+        TkZone(25f, MaterialTheme.fit.success, "Normal"),
+        TkZone(30f, MaterialTheme.fit.warning, "Fazla"),
+        TkZone(40f, MaterialTheme.fit.danger, "Obez")
+    )
+    val bmiColor = when {
+        bmi <= 0f -> MaterialTheme.fit.muted
+        bmi < 18.5f -> Palette.info
+        bmi < 25f -> MaterialTheme.fit.success
+        bmi < 30f -> MaterialTheme.fit.warning
+        else -> MaterialTheme.fit.danger
+    }
+
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+        contentPadding = toolListPadding,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             FitCard {
+                TkCardTitle("Vücut bilgilerin", "Varsayılanlar profilinden gelir; burada değiştirmek profili etkilemez.")
+                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FitTextField(h, { h = it }, "Boy (cm)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
                     FitTextField(w, { w = it }, "Kilo (kg)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
@@ -481,32 +661,25 @@ private fun BodyTool(vm: AppViewModel) {
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     FitTextField(a, { a = it.filter { c -> c.isDigit() } }, "Yaş", Modifier.weight(1f), keyboardType = KeyboardType.Number)
-                    Column(Modifier.weight(1f)) {
-                        OverlineText("Cinsiyet")
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            ChoiceChip("Erkek", male, { male = true })
-                            ChoiceChip("Kadın", !male, { male = false })
-                        }
-                    }
+                    TkSegmented(listOf("Erkek", "Kadın"), if (male) 0 else 1, Modifier.weight(1f)) { male = it == 0 }
                 }
             }
         }
         item {
             FitCard {
-                OverlineText("Vücut kitle indeksi")
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(bmi.trimNum(), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.fit.accent)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        Calc.bmiCategory(bmi),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.fit.muted,
-                        modifier = Modifier.padding(bottom = 5.dp)
-                    )
-                }
+                TkCardTitle("Vücut kitle indeksi")
                 Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f)) {
+                        TkHero(if (bmi > 0f) bmi.trimNum() else "—", color = bmiColor)
+                    }
+                    if (bmi > 0f) {
+                        TkChip(Calc.bmiCategory(bmi), bmiColor, Modifier.padding(bottom = 6.dp))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                TkRangeBar(bmi, 15f, 40f, zones)
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "VKİ kas kütlesini hesaba katmaz. Düzenli ağırlık çalışan biri için yanıltıcı olabilir; ölçüm ve fotoğraf takibi daha güvenilirdir.",
                     style = MaterialTheme.typography.bodySmall,
@@ -516,7 +689,7 @@ private fun BodyTool(vm: AppViewModel) {
         }
         item {
             FitCard {
-                OverlineText("Günlük kalori ihtiyacı")
+                TkCardTitle("Günlük kalori ihtiyacı", "Mifflin–St Jeor bazal metabolizma × aktivite katsayısı")
                 Spacer(Modifier.height(10.dp))
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
@@ -527,11 +700,21 @@ private fun BodyTool(vm: AppViewModel) {
                     }
                 }
                 Spacer(Modifier.height(14.dp))
-                KeyValueRow("Bazal metabolizma (BMR)", "${bmr.toInt()} kcal")
-                KeyValueRow("Günlük ihtiyaç (TDEE)", "${tdee.toInt()} kcal", MaterialTheme.fit.accent)
-                KeyValueRow("Kas alımı (+%10)", "${(tdee * 1.1f).toInt()} kcal")
-                KeyValueRow("Yağ kaybı (−%15)", "${(tdee * 0.85f).toInt()} kcal")
+                TkHero(
+                    if (tdee > 0f) "${tdee.toInt()}" else "—", "kcal", MaterialTheme.fit.accent,
+                    "Günlük ihtiyaç (TDEE) · ×${factors[activity.coerceIn(0, factors.lastIndex)].trimNum()}"
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TkStat("BMR", "${bmr.toInt()} kcal", Modifier.weight(1f))
+                    TkStat("Kas alımı +%10", "${(tdee * 1.1f).toInt()} kcal", Modifier.weight(1f), MaterialTheme.fit.success)
+                }
                 Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TkStat("Yağ kaybı −%15", "${(tdee * 0.85f).toInt()} kcal", Modifier.weight(1f), MaterialTheme.fit.warning)
+                    TkStat("Protein ≈", "${(wv * 1.8f).toInt()} g/gün", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "Protein hedefi olarak vücut ağırlığının kilogramı başına 1,6–2,2 g yaygın bir öneridir (≈ ${(wv * 1.8f).toInt()} g/gün).",
                     style = MaterialTheme.typography.bodySmall,

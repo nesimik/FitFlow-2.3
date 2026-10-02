@@ -30,12 +30,14 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.core.BodyCalc
 import com.example.core.formatDateShort
 import com.example.core.trimNum
 import com.example.ui.theme.fit
+import com.example.ui.theme.mono
 import kotlin.math.abs
 
 /** "−1,2 kg" / "+0,8 kg" / "0 kg" — tek işaret, ondalık virgül. */
@@ -85,7 +87,7 @@ internal fun WeightTrendChart(
             Column(Modifier.weight(1f)) {
                 Text(
                     points[sel].weightKg.trimNum().replace('.', ',') + " kg",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineMedium.mono().copy(fontWeight = FontWeight.SemiBold),
                     color = accent
                 )
                 Text(
@@ -95,11 +97,14 @@ internal fun WeightTrendChart(
                 )
             }
             if (change != null) {
-                Text(
-                    "Trend: ${signedKg(change.deltaKg)} / ${change.spanDays} gün",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.fit.muted
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Trend", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                    Text(
+                        "${signedKg(change.deltaKg)} / ${change.spanDays} gün",
+                        style = MaterialTheme.typography.labelLarge.mono(),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
 
@@ -156,7 +161,7 @@ internal fun WeightTrendChart(
         }
 
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatDateShort(points.first().dateMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            Text(formatDateShort(points.first().dateMillis), style = MaterialTheme.typography.labelSmall.mono(), color = MaterialTheme.fit.muted)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(accent))
                 Spacer(Modifier.width(4.dp))
@@ -166,7 +171,7 @@ internal fun WeightTrendChart(
                 Spacer(Modifier.width(4.dp))
                 Text("7 günlük trend", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
             }
-            Text(formatDateShort(points.last().dateMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            Text(formatDateShort(points.last().dateMillis), style = MaterialTheme.typography.labelSmall.mono(), color = MaterialTheme.fit.muted)
         }
     }
 }

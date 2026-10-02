@@ -453,7 +453,7 @@ private fun RestHero(
     onFree: () -> Unit,
     onStartNow: () -> Unit
 ) {
-    val tone = Color(0xFFA5B4FC)
+    val tone = readable(Color(0xFFA5B4FC))
     HeroFrame(tone) {
         Overline("Bugün · dinlenme günü", tone)
         Spacer(Modifier.height(8.dp))
@@ -681,7 +681,7 @@ private fun WarningNote(text: String) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Icon(Icons.Default.Warning, null, tint = MuscleColors.recovering, modifier = Modifier.size(16.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = MuscleColors.recovering, modifier = Modifier.weight(1f))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = readable(MuscleColors.recovering), modifier = Modifier.weight(1f))
     }
 }
 
@@ -773,7 +773,7 @@ private fun QuickAccessRow(onFree: () -> Unit, onMeasure: () -> Unit, onHistory:
     ) {
         QuickTile(Icons.Default.Bolt, "Serbest", MaterialTheme.fit.accent, Modifier.weight(1f), onFree)
         QuickTile(Icons.Default.MonitorWeight, "Kilo", MuscleColors.fresh, Modifier.weight(1f), onMeasure)
-        QuickTile(Icons.Default.History, "Geçmiş", Color(0xFFA5B4FC), Modifier.weight(1f), onHistory)
+        QuickTile(Icons.Default.History, "Geçmiş", readable(Color(0xFFA5B4FC)), Modifier.weight(1f), onHistory)
         QuickTile(Icons.Default.Calculate, "Hesapla", MaterialTheme.fit.gold, Modifier.weight(1f), onTools)
     }
 }
@@ -841,7 +841,7 @@ private fun BodyStatusCard(
                 when {
                     todayConflicts == null -> Unit
                     todayConflicts.isEmpty() -> Text("Engel yok", style = MaterialTheme.typography.labelMedium, color = MuscleColors.fresh)
-                    else -> Text("⚠ ${todayConflicts.size} kas", style = MaterialTheme.typography.labelMedium, color = MuscleColors.recovering)
+                    else -> Text("⚠ ${todayConflicts.size} kas", style = MaterialTheme.typography.labelMedium, color = readable(MuscleColors.recovering))
                 }
             } else {
                 Text("bu hafta · etkin set", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
@@ -871,7 +871,7 @@ private fun BodyStatusCard(
                 Text(
                     "Bugünkü programda: ${todayConflicts.joinToString(", ")} henüz tam toparlanmadı.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MuscleColors.recovering
+                    color = readable(MuscleColors.recovering)
                 )
                 Spacer(Modifier.height(6.dp))
             }
@@ -1387,3 +1387,9 @@ private fun UpdateBanner(info: com.example.ui.AppUpdate.Info, onInstall: () -> U
         }
     }
 }
+
+
+/** 2.40: açık temada pastel renkleri koyulaştır (yazı okunurluğu). */
+@Composable
+private fun readable(c: Color): Color =
+    if (MaterialTheme.fit.isDark) c else androidx.compose.ui.graphics.lerp(c, Color.Black, 0.38f)
