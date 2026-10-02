@@ -228,9 +228,13 @@ object Reminders {
         if (settings.lastReminderDay == today) return
         val dao = FitDatabase.get(context).dao()
         val routine = dao.observeActiveRoutine().first() ?: return
-        val day = dao.daysForRoutine(routine.id).firstOrNull { it.weekday == todayWeekday() } ?: return
-        val doneToday = dao.observeFinishedWorkouts().first().any { it.startedAt >= today }
+        val days = dao.daysForRoutine(routine.id)
+        val finished = dao.observeFinishedWorkouts().first()
+        val doneToday = finished.any { it.startedAt >= today }
         if (doneToday) return
+        // 2.39: dönüşümlü programda son antrenmandan 2 gün geçtiyse sıradaki günü hatırlat
+        if (com.example.core.Schedule.isRotation(days) && finished.any { it.startedAt >= today - 2 * 86_400_000L }) return
+        val day = com.example.core.Schedule.todayDay(days, finished) ?: return
         val items = dao.itemsForDay(day.id).filter { !it.isWarmup }
         val names = items.sortedBy { it.orderIndex }.take(3)
             .mapNotNull { dao.exerciseById(it.exerciseId)?.let { e -> it.customName.ifBlank { e.name } } }

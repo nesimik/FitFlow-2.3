@@ -900,7 +900,8 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
 
                 val name = exSets.first().exerciseName
 
-                if (bestWeight > prevWeight + 0.01f) {
+                // 2.39: hareketin ilk seansı rekor sayılmaz (yoksa ilk antrenmanda her hareket 2 rekor üretir)
+                if (history.isNotEmpty() && bestWeight > prevWeight + 0.01f) {
                     val s = exSets.first { it.weightKg == bestWeight }
                     newPrs.add(
                         PrEntity(
@@ -909,12 +910,24 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                         )
                     )
                 }
-                if (bestE1rm > prevE1rm + 0.01f) {
+                if (history.isNotEmpty() && bestE1rm > prevE1rm + 0.01f) {
                     val s = exSets.maxByOrNull { Calc.e1rm(it.weightKg, it.reps) }!!
                     newPrs.add(
                         PrEntity(
                             exerciseId = exerciseId, exerciseName = name, type = PrEntity.TYPE_E1RM,
                             value = bestE1rm, weightKg = s.weightKg, reps = s.reps, dateMillis = workoutDate, workoutId = workoutId
+                        )
+                    )
+                }
+                // Tekrar rekoru: aynı (ya da daha ağır) ağırlıkta daha önce hiç yapılmamış tekrar sayısı
+                if (history.isNotEmpty() && newPrs.none { it.exerciseId == exerciseId && it.type == PrEntity.TYPE_WEIGHT }) {
+                    val repPr = exSets.filter { it.weightKg > 0f && it.reps > 0 }
+                        .filter { st -> st.reps > (history.filter { it.weightKg >= st.weightKg - 0.01f }.maxOfOrNull { it.reps } ?: Int.MAX_VALUE) }
+                        .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
+                    if (repPr != null) newPrs.add(
+                        PrEntity(
+                            exerciseId = exerciseId, exerciseName = name, type = PrEntity.TYPE_REPS,
+                            value = repPr.reps.toFloat(), weightKg = repPr.weightKg, reps = repPr.reps, dateMillis = workoutDate, workoutId = workoutId
                         )
                     )
                 }

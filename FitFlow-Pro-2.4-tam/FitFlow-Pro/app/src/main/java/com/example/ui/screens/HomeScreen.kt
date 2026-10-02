@@ -121,20 +121,14 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var showCancelActiveDialog by remember { mutableStateOf(false) }
+    var showQuickWeight by remember { mutableStateOf(false) }
+    if (showQuickWeight) QuickWeightSheet(vm, onAllMetrics = { nav.navigate(Routes.BODY) }, onDismiss = { showQuickWeight = false })
     var hasPreDeloadBackup by remember { mutableStateOf(vm.settings.getPreDeloadBackup().isNotBlank()) }
 
     val today = todayWeekday()
     val plannedWeekdays = remember(days) { days.map { it.weekday }.filter { it in 1..7 }.toSet() }
-    // 2.32: haftanın gününe bağlı olmayan (A/B dönüşümlü) programlarda "bugün" sıradaki gündür.
-    val rotation = days.isNotEmpty() && days.none { it.weekday in 1..7 }
-    val todayDay = remember(days, today, workouts, rotation) {
-        if (!rotation) days.firstOrNull { it.weekday == today }
-        else {
-            val dayStart = startOfDay(System.currentTimeMillis())
-            val doneId = workouts.filter { it.isFinished && it.startedAt >= dayStart }.maxByOrNull { it.startedAt }?.routineDayId
-            days.firstOrNull { it.id == doneId } ?: nextPlannedDay(days, workouts, today)
-        }
-    }
+    // 2.39: "bugün" kuralı core/Schedule'da (widget ve hatırlatıcı ile aynı)
+    val todayDay = remember(days, today, workouts) { com.example.core.Schedule.todayDay(days, workouts, today) }
     val doneToday = remember(workouts, todayDay) {
         val dayStart = startOfDay(System.currentTimeMillis())
         workouts.any { it.isFinished && it.startedAt >= dayStart && (todayDay == null || it.routineDayId == todayDay.id) }
@@ -254,7 +248,7 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
         item {
             QuickAccessRow(
                 onFree = { vm.startWorkout(null) { id -> nav.navigate("${Routes.WORKOUT}/$id") } },
-                onMeasure = { nav.navigate(Routes.BODY) },
+                onMeasure = { showQuickWeight = true },
                 onHistory = { nav.navigate(Routes.HISTORY) },
                 onTools = { nav.navigate(Routes.TOOLS) }
             )
@@ -263,7 +257,8 @@ fun HomeScreen(vm: AppViewModel, nav: NavHostController) {
         /* 2) Bu hafta */
         item {
             Box(Modifier.padding(horizontal = 16.dp)) {
-                WeekCard(workouts = workouts, sets = allSets, planned = plannedWeekdays, today = today)
+                WeekCard(workouts = workouts, sets = allSets, planned = plannedWeekdays, today = today,
+                    goal = com.example.core.Schedule.weeklyGoal(days, vm.settings.weeklyGoal.value))
             }
         }
 
@@ -336,13 +331,13 @@ private fun HomeHeader(name: String, streakWeeks: Int, onProfile: () -> Unit) {
             Row(
                 Modifier
                     .clip(RoundedCornerShape(18.dp))
-                    .background(Palette.gold.copy(alpha = 0.12f))
+                    .background(MaterialTheme.fit.gold.copy(alpha = 0.12f))
                     .padding(start = 9.dp, end = 11.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.LocalFireDepartment, null, tint = Palette.gold, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.LocalFireDepartment, null, tint = MaterialTheme.fit.gold, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("$streakWeeks hf", style = MaterialTheme.typography.labelLarge, color = Palette.gold, maxLines = 1)
+                Text("$streakWeeks hf", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.fit.gold, maxLines = 1)
             }
             Spacer(Modifier.width(10.dp))
         }
@@ -567,7 +562,7 @@ private fun DoneHero(
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DoneTile(
-                    if (delta == null) "—" else "${if (delta >= 0) "+" else ""}$delta%",
+                    if (delta == null) "—" else "${if (delta >= 0) "+" else "−"}%${kotlin.math.abs(delta)}",
                     "hacim",
                     if (delta != null && delta < 0) MaterialTheme.fit.warning else MaterialTheme.colorScheme.onSurface,
                     Modifier.weight(1f)
@@ -575,7 +570,7 @@ private fun DoneHero(
                 DoneTile(
                     "${prNames.size} PR",
                     prNames.firstOrNull() ?: "rekor",
-                    if (prNames.isNotEmpty()) Palette.gold else MaterialTheme.colorScheme.onSurface,
+                    if (prNames.isNotEmpty()) MaterialTheme.fit.gold else MaterialTheme.colorScheme.onSurface,
                     Modifier.weight(1f)
                 )
                 DoneTile(
@@ -693,14 +688,13 @@ private fun WarningNote(text: String) {
 /* ---------------------------------- Bu hafta --------------------------------- */
 
 @Composable
-private fun WeekCard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>, planned: Set<Int>, today: Int) {
+private fun WeekCard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>, planned: Set<Int>, today: Int, goal: Int = 3) {
     val weekStart = startOfWeek(System.currentTimeMillis())
     val weekWorkouts = workouts.filter { it.isFinished && it.startedAt >= weekStart }
     val done = weekWorkouts.map { weekdayOf(it.startedAt) }.toSet()
     val ids = weekWorkouts.map { it.id }.toSet()
     val volume = sets.filter { it.workoutId in ids && Analytics.isEffectiveSet(it) }
         .sumOf { it.load.toDouble() }.toFloat()
-    val goal = planned.size.takeIf { it > 0 } ?: 3
 
     FitCard(contentPadding = PaddingValues(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -778,9 +772,9 @@ private fun QuickAccessRow(onFree: () -> Unit, onMeasure: () -> Unit, onHistory:
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         QuickTile(Icons.Default.Bolt, "Serbest", MaterialTheme.fit.accent, Modifier.weight(1f), onFree)
-        QuickTile(Icons.Default.MonitorWeight, "Ölçüm", MuscleColors.fresh, Modifier.weight(1f), onMeasure)
+        QuickTile(Icons.Default.MonitorWeight, "Kilo", MuscleColors.fresh, Modifier.weight(1f), onMeasure)
         QuickTile(Icons.Default.History, "Geçmiş", Color(0xFFA5B4FC), Modifier.weight(1f), onHistory)
-        QuickTile(Icons.Default.Calculate, "Hesapla", Palette.gold, Modifier.weight(1f), onTools)
+        QuickTile(Icons.Default.Calculate, "Hesapla", MaterialTheme.fit.gold, Modifier.weight(1f), onTools)
     }
 }
 
@@ -1031,10 +1025,10 @@ private fun RecentWorkoutsCard(
                     Text(
                         "$prCount PR",
                         style = MaterialTheme.typography.labelMedium.mono().copy(fontWeight = FontWeight.Bold),
-                        color = Palette.gold,
+                        color = MaterialTheme.fit.gold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Palette.gold.copy(alpha = 0.15f))
+                            .background(MaterialTheme.fit.gold.copy(alpha = 0.15f))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -1083,7 +1077,11 @@ private fun recoveryConflicts(
 }
 
 /** Sıradaki planlı gün: bugünden sonraki ilk haftalık gün; hiç gün atanmamışsa en uzun süredir yapılmayan. */
-private fun nextPlannedDay(days: List<RoutineDayEntity>, workouts: List<WorkoutEntity>, today: Int): RoutineDayEntity? {
+private fun nextPlannedDay(days: List<RoutineDayEntity>, workouts: List<WorkoutEntity>, today: Int): RoutineDayEntity? =
+    com.example.core.Schedule.nextPlannedDay(days, workouts, today)
+
+@Suppress("unused")
+private fun nextPlannedDayOld(days: List<RoutineDayEntity>, workouts: List<WorkoutEntity>, today: Int): RoutineDayEntity? {
     if (days.isEmpty()) return null
     val withDay = days.filter { it.weekday in 1..7 }
     if (withDay.isNotEmpty()) {
@@ -1262,7 +1260,7 @@ private fun SummaryCard(
             SummaryDivider()
             SummaryMetric(formatTonnage(data.volume), "hacim", null, Modifier.weight(1f))
             SummaryDivider()
-            SummaryMetric("${data.prCount}", "rekor", null, Modifier.weight(1f), if (data.prCount > 0) Palette.gold else null)
+            SummaryMetric("${data.prCount}", "rekor", null, Modifier.weight(1f), if (data.prCount > 0) MaterialTheme.fit.gold else null)
             SummaryDivider()
             SummaryMetric(if (data.avgMin > 0) "${data.avgMin}" else "—", "dk / seans", null, Modifier.weight(1f))
         }

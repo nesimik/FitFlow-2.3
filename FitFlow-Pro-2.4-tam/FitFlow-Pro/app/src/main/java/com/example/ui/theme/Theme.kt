@@ -233,7 +233,7 @@ fun FitFlowTheme(
         success = Palette.success,
         warning = Palette.warning,
         danger = Palette.danger,
-        gold = Palette.gold,
+        gold = if (dark) Palette.gold else Color(0xFF9A6A00), // 2.39: açık temada okunur altın
         muted = if (dark) Palette.onDarkMuted else Palette.onLightMuted,
         cardBorder = if (dark) (if (amoled) Palette.cardLineAmoled else Palette.cardLineDark) else Palette.outlineLight,
         elevated = if (dark) (if (amoled) Palette.surfaceAmoled2 else Palette.surfaceDark2) else Palette.surfaceLight2,

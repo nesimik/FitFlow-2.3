@@ -16,14 +16,14 @@ val TR: Locale = Locale("tr", "TR")
 /** 2.32: en fazla 2 ondalık (1.25 kg adımları "1.3" olarak yuvarlanıp yanlış kaydediliyordu). */
 fun Float.trimNum(): String =
     if (abs(this - this.roundToInt()) < 0.001f) this.roundToInt().toString()
-    else String.format(Locale.US, "%.2f", this).trimEnd('0').trimEnd('.')
+    else String.format(Locale.US, "%.2f", this).trimEnd('0').trimEnd('.').replace('.', ',')  // 2.39: Türkçe ondalık virgül
 
 fun Float.kg(): String = "${trimNum()} kg"
 
 /** 1234.5 -> "1.2 t" / 850 -> "850 kg" */
 fun formatTonnage(kg: Float): String = when {
-    kg >= 1_000_000 -> String.format(Locale.US, "%.1f kt", kg / 1_000_000f)
-    kg >= 1000 -> String.format(Locale.US, "%.1f t", kg / 1000f)
+    kg >= 1_000_000 -> String.format(TR, "%.1f kt", kg / 1_000_000f)
+    kg >= 1000 -> String.format(TR, "%.1f t", kg / 1000f)
     else -> "${kg.roundToInt()} kg"
 }
 

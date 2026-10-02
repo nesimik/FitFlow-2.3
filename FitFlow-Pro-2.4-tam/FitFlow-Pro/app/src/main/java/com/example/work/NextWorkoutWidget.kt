@@ -53,28 +53,35 @@ object WidgetUpdater {
         val settings = SettingsStore(context)
         val workouts = dao.observeFinishedWorkouts().first()
         val now = System.currentTimeMillis()
-        val streak = Analytics.streakWeeks(workouts)
+        val routineForGoal = dao.observeActiveRoutine().first()
+        val allDays = routineForGoal?.let { dao.daysForRoutine(it.id) }.orEmpty()
+        val goal = com.example.core.Schedule.weeklyGoal(allDays, settings.weeklyGoal.value)
+        val streak = Analytics.streakWeeks(workouts, goal)
         val weekDone = workouts.count { it.startedAt >= startOfWeek(now) }
-        val goal = settings.weeklyGoal.value
 
         var label = "SIRADAKİ"
         var title = "Program yok"
         var sub = "Uygulamada bir program oluştur"
         val routine = dao.observeActiveRoutine().first()
         if (routine != null) {
-            val days = dao.daysForRoutine(routine.id).filter { it.weekday in 1..7 }
+            // 2.39: ana ekranla aynı kural (haftalık takvim ya da A/B dönüşümlü)
+            val days = allDays
             val today = todayWeekday()
-            val doneToday = workouts.any { it.startedAt >= startOfDay(now) }
-            val pick = (0..6).firstNotNullOfOrNull { off ->
-                if (off == 0 && doneToday) null
-                else {
-                    val wd = (today - 1 + off) % 7 + 1
-                    days.firstOrNull { it.weekday == wd }?.let { it to off }
-                }
+            val todayD = com.example.core.Schedule.todayDay(days, workouts, today)
+            val doneToday = todayD != null && workouts.any { it.startedAt >= startOfDay(now) && it.routineDayId == todayD.id }
+            val target = if (todayD != null && !doneToday) todayD else com.example.core.Schedule.nextPlannedDay(days, workouts, today)
+            val pick = target?.let { d ->
+                val ahead = if (d.id == todayD?.id && !doneToday) 0 else com.example.core.Schedule.daysAhead(d, today).let { if (it == 0 && d.weekday in 1..7) 7 else it }
+                d to ahead
             }
             if (pick != null) {
                 val (day, off) = pick
-                label = when (off) { 0 -> "BUGÜN"; 1 -> "YARIN"; else -> DAY_NAMES[day.weekday - 1].uppercase(java.util.Locale("tr")) }
+                label = when {
+                    off == 0 -> if (day.weekday in 1..7) "BUGÜN" else "SIRADAKİ"
+                    off == 1 -> "YARIN"
+                    day.weekday in 1..7 -> DAY_NAMES[day.weekday - 1].uppercase(java.util.Locale("tr"))
+                    else -> "SIRADAKİ"
+                }
                 title = day.name
                 val items = dao.itemsForDay(day.id).filter { !it.isWarmup }.sortedBy { it.orderIndex }
                 val names = items.take(3).mapNotNull { i -> i.customName.ifBlank { dao.exerciseById(i.exerciseId)?.name ?: "" }.takeIf { it.isNotBlank() } }
@@ -90,6 +97,16 @@ object WidgetUpdater {
             Intent(context, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // "Başla": bugünün antrenmanını doğrudan başlatır
+        val start = PendingIntent.getActivity(
+            context, 7002,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(MainActivity.EXTRA_START_TODAY, true)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val canStart = (label == "BUGÜN" || label == "SIRADAKİ") && !title.startsWith("Antrenman tamam") && title != "Program yok"
         ids.forEach { id ->
             val v = RemoteViews(context.packageName, R.layout.widget_next).apply {
                 setTextViewText(R.id.widget_label, label)
@@ -97,9 +114,9 @@ object WidgetUpdater {
                 setTextViewText(R.id.widget_sub, sub)
                 setTextViewText(R.id.widget_streak, "🔥 $streak hf")
                 setTextViewText(R.id.widget_week, "$weekDone/$goal bu hafta")
-                setTextViewText(R.id.widget_start, if (label == "BUGÜN" && !title.startsWith("Antrenman tamam")) "Başla" else "Aç")
+                setTextViewText(R.id.widget_start, if (canStart) "Başla" else "Aç")
                 setOnClickPendingIntent(R.id.widget_root, open)
-                setOnClickPendingIntent(R.id.widget_start, open)
+                setOnClickPendingIntent(R.id.widget_start, if (canStart) start else open)
             }
             manager.updateAppWidget(id, v)
         }

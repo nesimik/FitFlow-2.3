@@ -185,7 +185,7 @@ fun StatTile(
                 ) { Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp)) }
             }
             Text(
-                label.uppercase(),
+                label.uppercase(java.util.Locale("tr")),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.fit.muted,
                 maxLines = 1,

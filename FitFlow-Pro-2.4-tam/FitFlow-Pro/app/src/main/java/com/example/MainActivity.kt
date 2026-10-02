@@ -24,12 +24,24 @@ import com.example.ui.theme.FitFlowTheme
 /** FragmentActivity: parmak izi kilidi (BiometricPrompt) bunu gerektirir; ComponentActivity özelliklerini de taşır. */
 class MainActivity : androidx.fragment.app.FragmentActivity() {
 
+    companion object {
+        const val EXTRA_START_TODAY = "start_today"
+        /** Widget "Başla": uygulama ekranı bu isteği görünce bugünün antrenmanını açar. */
+        val startTodayRequest = kotlinx.coroutines.flow.MutableStateFlow(false)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_START_TODAY, false)) startTodayRequest.value = true
+    }
+
     /** Dinlenme sayacı bildirimi için (Android 13+). Reddedilirse sayaç uygulama içinde çalışmaya devam eder. */
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent?.getBooleanExtra(EXTRA_START_TODAY, false) == true) startTodayRequest.value = true
         com.example.work.FitJobs.ensureScheduled(applicationContext)
         com.example.work.WidgetUpdater.refresh(applicationContext)
         enableEdgeToEdge()

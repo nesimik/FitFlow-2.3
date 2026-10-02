@@ -47,7 +47,7 @@ object Analytics {
         return if (timestamp < 10_000_000_000L) timestamp * 1000L else timestamp
     }
 
-    fun dashboard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>): DashboardStats {
+    fun dashboard(workouts: List<WorkoutEntity>, sets: List<WorkoutSetEntity>, weeklyGoal: Int = 1): DashboardStats {
         if (workouts.isEmpty()) return DashboardStats()
         val now = System.currentTimeMillis()
         val weekStart = startOfWeek(now)
@@ -79,23 +79,27 @@ object Analytics {
             totalSets = validSets.size,
             totalDurationSec = workouts.sumOf { it.durationSeconds },
             avgDurationSec = workouts.filter { it.durationSeconds > 0 }.let { d -> if (d.isEmpty()) 0 else d.sumOf { it.durationSeconds } / d.size },
-            streakWeeks = streakWeeks(workouts),
+            streakWeeks = streakWeeks(workouts, weeklyGoal),
             streakDays = streakDays(workouts),
             lastWorkoutMillis = last?.startedAt ?: 0L,
             daysSinceLast = last?.let { daysBetween(it.startedAt, now) } ?: -1
         )
     }
 
-    /** Kesintisiz antrenman yapılan hafta sayısı (bu hafta boşsa geçen haftadan sayar). */
-    fun streakWeeks(workouts: List<WorkoutEntity>): Int {
-        if (workouts.isEmpty()) return 0
-        val weeks = workouts.map { startOfWeek(it.startedAt) }.toSet()
+    /**
+     * 2.39: Haftalık hedefe ulaşılan kesintisiz hafta sayısı. Bu hafta henüz hedefe ulaşılmadıysa seri bozulmaz,
+     * geçen haftadan sayılır.
+     */
+    fun streakWeeks(workouts: List<WorkoutEntity>, goal: Int = 1): Int {
+        val g = goal.coerceIn(1, 7)
+        val counts = workouts.filter { it.isFinished }.groupingBy { startOfWeek(it.startedAt) }.eachCount()
+        if (counts.isEmpty()) return 0
         var cursor = startOfWeek(System.currentTimeMillis())
-        if (!weeks.contains(cursor)) cursor -= 7 * 86_400_000L
-        var count = 0
-        while (weeks.contains(cursor)) {
+        var count = if ((counts[cursor] ?: 0) >= g) 1 else 0
+        cursor = startOfWeek(cursor - 3 * 86_400_000L)
+        while ((counts[cursor] ?: 0) >= g) {
             count++
-            cursor -= 7 * 86_400_000L
+            cursor = startOfWeek(cursor - 3 * 86_400_000L)
         }
         return count
     }

@@ -581,6 +581,7 @@ fun WorkoutDetailScreen(vm: AppViewModel, nav: NavHostController, workoutId: Lon
                                 "${pr.exerciseName} — " + when (pr.type) {
                                     com.example.data.PrEntity.TYPE_WEIGHT -> "${pr.weightKg.kg()} × ${pr.reps}"
                                     com.example.data.PrEntity.TYPE_E1RM -> "1RM ${pr.value.kg()}"
+                                    com.example.data.PrEntity.TYPE_REPS -> "${pr.weightKg.kg()} × ${pr.reps} (tekrar rekoru)"
                                     else -> formatTonnage(pr.value)
                                 },
                                 style = MaterialTheme.typography.bodyMedium,

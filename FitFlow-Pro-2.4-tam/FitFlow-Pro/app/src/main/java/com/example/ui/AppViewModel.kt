@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -158,7 +159,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /* -------------------------------- Analiz -------------------------------- */
 
     val dashboard: StateFlow<DashboardStats> =
-        combine(workouts, allSets) { w, s -> Analytics.dashboard(w, s) }
+        combine(workouts, allSets, routineDays, settings.weeklyGoal) { w, s, d, g -> Analytics.dashboard(w, s, com.example.core.Schedule.weeklyGoal(d, g)) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardStats())
 
     val weeklySeries = combine(workouts, allSets) { w, s -> Analytics.weeklySeries(w, s, 8) }
@@ -234,8 +235,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Haftalık hedefe uyum geçmişi. */
     val adherence: StateFlow<List<WeekAdherence>> =
-        combine(workouts, settings.weeklyGoal) { w, goal ->
-            ProgressAnalytics.adherence(w, goal, 8)
+        combine(workouts, settings.weeklyGoal, routineDays) { w, goal, d ->
+            ProgressAnalytics.adherence(w, com.example.core.Schedule.weeklyGoal(d, goal), 8)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Tekrar aralığı dağılımı — güç / hipertrofi / dayanıklılık payı. */
@@ -456,8 +457,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var ringtone: Ringtone? = null
     private var alarmJob: Job? = null
 
+    /** 2.39: ilk açılış kurulumu gösterilsin mi (yeni kullanıcı). */
+    private val _showOnboarding = MutableStateFlow(false)
+    val showOnboarding: StateFlow<Boolean> = _showOnboarding
+    fun onboardingFinished() { _showOnboarding.value = false }
+
     init {
         checkUpdate()
+        viewModelScope.launch {
+            if (!settings.onboardingDone) {
+                // Mevcut kullanıcı (kaydı ya da adı olan) kuruluma zorlanmaz
+                val hasData = repo.workouts.first().isNotEmpty() || settings.userName.value != "Sporcu"
+                if (hasData) settings.onboardingDone = true else _showOnboarding.value = true
+            }
+        }
         viewModelScope.launch { exercises.collect { com.example.core.VolumeRules.update(it) } }
         // Kilit ekranı / bildirim düğmeleri: +30 sn ve Atla
         viewModelScope.launch {
@@ -513,6 +526,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _elapsed.value = 0
             _restOverrides.value = emptyMap()
             onStarted(id)
+        }
+    }
+
+    /** Widget "Başla": açık seans varsa ona, yoksa bugünün program gününü başlatır (2.39). */
+    fun startTodayFromWidget(onStarted: (Long) -> Unit) {
+        viewModelScope.launch {
+            activeWorkout.value?.takeIf { !it.isFinished }?.let { onStarted(it.id); return@launch }
+            val days = kotlinx.coroutines.withTimeoutOrNull(3000) { routineDays.first { it.isNotEmpty() } } ?: routineDays.value
+            val day = com.example.core.Schedule.todayDay(days, workouts.value)
+            startWorkout(day, onStarted = onStarted)
         }
     }
 
@@ -1238,13 +1261,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveBodyMetric(m: BodyMetricEntity) = viewModelScope.launch {
         val id = repo.saveBodyMetric(m)
-        if (m.weightKg > 0f) {
-            settings.setBodyWeight(m.weightKg)
-            runCatching { com.example.work.HealthSync.syncWeight(getApplication(), id, m.dateMillis, m.weightKg) }
-        }
+        if (m.weightKg > 0f) runCatching { com.example.work.HealthSync.syncWeight(getApplication(), id, m.dateMillis, m.weightKg) }
+        syncBodyWeightFromLatest(m.copy(id = id))
     }
 
-    fun deleteBodyMetric(m: BodyMetricEntity) = viewModelScope.launch { repo.deleteBodyMetric(m) }
+    fun deleteBodyMetric(m: BodyMetricEntity) = viewModelScope.launch {
+        repo.deleteBodyMetric(m)
+        syncBodyWeightFromLatest(null, deletedId = m.id)
+    }
+
+    /** 2.39: Güncel kilo = tarihi en yeni, kilosu olan ölçüm (eski kaydı düzenlemek güncel kiloyu değiştirmez). */
+    private fun syncBodyWeightFromLatest(saved: BodyMetricEntity?, deletedId: Long = -1L) {
+        val list = (bodyMetrics.value.filter { it.id != deletedId && it.id != saved?.id } + listOfNotNull(saved))
+            .filter { it.weightKg > 0f }
+        list.maxByOrNull { it.dateMillis }?.let { settings.setBodyWeight(it.weightKg) }
+    }
     fun saveNote(n: NoteEntity) = viewModelScope.launch { repo.saveNote(n) }
     fun deleteNote(n: NoteEntity) = viewModelScope.launch { repo.deleteNote(n) }
 

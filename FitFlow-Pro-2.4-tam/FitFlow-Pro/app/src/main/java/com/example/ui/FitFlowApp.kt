@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -163,18 +164,52 @@ fun FitFlowApp(vm: AppViewModel) {
     val lockEnabled by vm.settings.lockEnabled.collectAsStateWithLifecycle()
     val passcode by vm.settings.passcode.collectAsStateWithLifecycle()
     var unlocked by remember { mutableStateOf(false) }
-
-    if (lockEnabled && passcode.isNotBlank() && !unlocked) {
-        val bio by vm.settings.biometricOn.collectAsStateWithLifecycle()
-        LockScreen(check = { vm.settings.checkPasscode(it) }, biometric = bio, onUnlock = { unlocked = true })
-        return
+    // 2.39: arka planda 60 sn'den uzun kalınca kilit yeniden istenir (galeri/kamera dönüşü için kısa tolerans)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        var stoppedAt = 0L
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> stoppedAt = System.currentTimeMillis()
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    if (stoppedAt > 0L && System.currentTimeMillis() - stoppedAt > 60_000L) unlocked = false
+                    stoppedAt = 0L
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
-    AppScaffold(vm)
+    val locked = lockEnabled && passcode.isNotBlank() && !unlocked
+    Box(Modifier.fillMaxSize()) {
+        // Uygulama kilit altında da yaşar (gezinme durumu kaybolmaz); kilit ekranı üstte ve dokunuşları keser.
+        AppScaffold(vm)
+        val onboarding by vm.showOnboarding.collectAsStateWithLifecycle()
+        if (onboarding && !locked) com.example.ui.screens.OnboardingFlow(vm) { vm.onboardingFinished() }
+        if (locked) {
+            val bio by vm.settings.biometricOn.collectAsStateWithLifecycle()
+            Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { }
+            ) {
+                LockScreen(check = { vm.settings.checkPasscode(it) }, biometric = bio, onUnlock = { unlocked = true })
+            }
+        }
+    }
 }
 
 @Composable
 private fun AppScaffold(vm: AppViewModel) {
     val nav = rememberNavController()
+    // Widget "Başla" isteği
+    val startReq by com.example.MainActivity.startTodayRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(startReq) {
+        if (startReq) {
+            com.example.MainActivity.startTodayRequest.value = false
+            vm.startTodayFromWidget { id -> nav.navigate("${Routes.WORKOUT}/$id") }
+        }
+    }
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: Routes.HOME
     val showBars = navItems.any { current == it.route }
@@ -306,49 +341,6 @@ private fun AppScaffold(vm: AppViewModel) {
 }
 
 /* ================================ Yan menü ================================== */
-
-@Composable
-private fun DrawerSection(title: String) {
-    OverlineText(title, MaterialTheme.fit.accent, Modifier.padding(bottom = 8.dp))
-}
-
-@Composable
-private fun DrawerLink(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    tint: Color = MaterialTheme.fit.accent,
-    onClick: () -> Unit
-) {
-    FitCard(onClick = onClick, contentPadding = PaddingValues(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(tint.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) { Icon(icon, null, tint = tint, modifier = Modifier.size(17.dp)) }
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.fit.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                null,
-                tint = MaterialTheme.fit.muted,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
 
 /* ------------------------------- Alt gezinme ------------------------------- */
 
@@ -582,6 +574,7 @@ private fun PrDialog(c: PrCelebration, onDismiss: () -> Unit) {
                             when (pr.type) {
                                 PrEntity.TYPE_WEIGHT -> "En ağır set: ${pr.weightKg.kg()} × ${pr.reps}"
                                 PrEntity.TYPE_E1RM -> "Tahmini 1RM: ${pr.value.kg()}"
+                                PrEntity.TYPE_REPS -> "Tekrar rekoru: ${pr.weightKg.kg()} × ${pr.reps}"
                                 PrEntity.TYPE_VOLUME -> "Seans hacmi: ${pr.value.trimNum()} kg"
                                 else -> pr.value.trimNum()
                             },
