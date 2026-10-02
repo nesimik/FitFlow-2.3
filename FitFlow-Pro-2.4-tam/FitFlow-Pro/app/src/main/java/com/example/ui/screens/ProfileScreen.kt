@@ -73,6 +73,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.example.core.BodyCalc
 import com.example.core.Calc
 import com.example.core.formatDurationShort
 import com.example.core.formatTonnage
@@ -109,7 +110,6 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var showEdit by remember { mutableStateOf(false) }
-    val bmi = Calc.bmi(weight, height)
 
     var showClearConfirm by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -127,19 +127,17 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
     val goalLiftKg by vm.settings.goalLiftKg.collectAsStateWithLifecycle()
     var showGoals by remember { mutableStateOf(false) }
 
-    // Vücut: son 12 haftanın kilo ölçümleri (eskiden yeniye)
-    val weightSeries = remember(metrics) {
-        val from = System.currentTimeMillis() - 84L * 86_400_000L
-        metrics.filter { it.weightKg > 0f && it.dateMillis >= from }.sortedBy { it.dateMillis }
-    }
-    val latestWeight = metrics.filter { it.weightKg > 0f }.maxByOrNull { it.dateMillis }?.weightKg ?: weight
-    val weightDelta = if (weightSeries.size >= 2) weightSeries.last().weightKg - weightSeries.first().weightKg else null
+    // Vücut: kilo trendi (BodyScreen ile aynı EWMA) — son 12 hafta (eskiden yeniye)
+    val weightPoints = remember(metrics) { BodyCalc.weightPoints(metrics) }
+    val weightTrend = remember(weightPoints) { BodyCalc.ewmaTrend(weightPoints) }
+    val trendSeries = remember(weightPoints, weightTrend) { BodyCalc.trendWindow(weightPoints, weightTrend, 84) }
+    val latestWeight = weightPoints.lastOrNull()?.weightKg ?: weight
+    val weightDelta = if (trendSeries.size >= 2) trendSeries.last() - trendSeries.first() else null
     val latestFat = metrics.filter { it.bodyFatPct > 0f }.maxByOrNull { it.dateMillis }?.bodyFatPct
     val bmiNow = Calc.bmi(latestWeight, height)
     val firstMillis = workouts.minOfOrNull { it.startedAt }
     val months = firstMillis?.let { ((System.currentTimeMillis() - it) / (30L * 86_400_000L)).toInt() }
     val liftBest = remember(allSets, goalLiftName) { best1rmFor(goalLiftName, allSets) }
-    val startWeight = metrics.filter { it.weightKg > 0f }.minByOrNull { it.dateMillis }?.weightKg ?: latestWeight
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -247,15 +245,15 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
                         if (weightDelta != null) {
                             Text(
                                 (if (weightDelta > 0f) "+" else if (weightDelta < 0f) "−" else "") +
-                                    "${kotlin.math.abs(weightDelta).trComma()} kg · 12 hafta",
+                                    "${kotlin.math.abs(weightDelta).trComma()} kg · 12 hafta (trend)",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (targetWeight > 0f && (targetWeight - latestWeight) * weightDelta < 0f) MaterialTheme.fit.warning
                                 else MaterialTheme.fit.success
                             )
                         }
                     }
-                    if (weightSeries.size >= 2) {
-                        Sparkline(weightSeries.map { it.weightKg }, Modifier.width(150.dp), height = 52.dp)
+                    if (trendSeries.size >= 2) {
+                        Sparkline(trendSeries, Modifier.width(150.dp), height = 52.dp)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -263,6 +261,47 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
                     BodyTile("Yağ oranı", latestFat?.let { "%" + it.trComma() } ?: "—", Modifier.weight(1f))
                     BodyTile("Boy", "${height.trimNum()} cm", Modifier.weight(1f))
                     BodyTile("VKİ", bmiNow.trComma(), Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(10.dp))
+                // Hedefler: GoalsDialog giriş noktası
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.fit.elevated)
+                        .clickable { showGoals = true }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Hedef kilo", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (targetWeight > 0f) {
+                                val left = targetWeight - latestWeight
+                                "${targetWeight.trComma()} kg" + when {
+                                    kotlin.math.abs(left) < 0.05f -> " · ulaşıldı"
+                                    left > 0f -> " · ${left.trComma()} kg kaldı"
+                                    else -> " · ${(-left).trComma()} kg kaldı"
+                                }
+                            } else "Belirlenmedi",
+                            style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1
+                        )
+                        if (goalLiftKg > 0f) {
+                            Text(
+                                "$goalLiftName: ${liftBest?.trComma() ?: "—"} / ${goalLiftKg.trComma()} kg (1RM)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.fit.muted,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    Text(
+                        if (targetWeight > 0f || goalLiftKg > 0f) "Düzenle" else "Hedef belirle",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.fit.accent
+                    )
                 }
             }
         }
@@ -289,9 +328,9 @@ fun ProfileScreen(vm: AppViewModel, nav: NavHostController) {
 
         item {
             Text(
-                "Tüm veri cihazda · FitFlow 2.7",
+                "Tüm veri cihazda · FitFlow ${com.example.BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFF4B5361),
+                color = MaterialTheme.fit.muted,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -393,7 +432,7 @@ private fun best1rmFor(name: String, sets: List<com.example.data.WorkoutSetEntit
     val key = name.trim().lowercase(java.util.Locale("tr")).replace('ı', 'i')
     if (key.isEmpty()) return null
     return sets.asSequence()
-        .filter { !it.isWarmup && it.weightKg > 0f && it.reps in 1..12 }
+        .filter { it.isCompleted && !it.isWarmup && it.weightKg > 0f && it.reps in 1..12 }
         .filter { it.exerciseName.lowercase(java.util.Locale("tr")).replace('ı', 'i') == key }
         .map { Calc.e1rm(it.weightKg, it.reps) }
         .maxOrNull()
@@ -454,7 +493,7 @@ internal fun SettingRow(
                 Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted, maxLines = 1)
                 Spacer(Modifier.width(4.dp))
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color(0xFF4B5361), modifier = Modifier.size(20.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.fit.muted, modifier = Modifier.size(20.dp))
         }
         if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
     }

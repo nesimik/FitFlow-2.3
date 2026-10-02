@@ -1388,80 +1388,8 @@ private fun LiftBalanceCard(balance: List<com.example.core.LiftBalanceItem>) {
 
 @Composable
 private fun RecordsTab(vm: AppViewModel, nav: NavHostController) {
-    val prs by vm.prs.collectAsStateWithLifecycle()
-    var filter by rememberSaveable { mutableIntStateOf(0) }
-
-    val types = listOf(null, PrEntity.TYPE_WEIGHT, PrEntity.TYPE_E1RM, PrEntity.TYPE_VOLUME)
-    val filtered = if (filter == 0) prs else prs.filter { it.type == types[filter] }
-
-    LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            PillTabs(listOf("Hepsi", "Ağırlık", "1RM", "Hacim"), filter) { filter = it }
-        }
-
-        if (filtered.isEmpty()) {
-            item {
-                EmptyState(
-                    Icons.Default.EmojiEvents,
-                    "Rekor yok",
-                    "Bir harekette önceki en iyi değerini geçtiğinde rekor otomatik kaydedilir."
-                )
-            }
-        } else {
-            item {
-                Text(
-                    "${filtered.size} rekor",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.fit.muted
-                )
-            }
-            items(filtered, key = { it.id }) { pr ->
-                FitCard(
-                    onClick = { nav.navigate("${Routes.EXERCISE}/${pr.exerciseId}") },
-                    contentPadding = PaddingValues(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .size(38.dp)
-                                .clip(RoundedCornerShape(13.dp))
-                                .background(MaterialTheme.fit.gold.copy(alpha = 0.14f)),
-                            contentAlignment = Alignment.Center
-                        ) { Icon(Icons.Default.EmojiEvents, null, tint = MaterialTheme.fit.gold, modifier = Modifier.size(18.dp)) }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(pr.exerciseName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                "${prTypeLabel(pr.type)} · ${formatDate(pr.dateMillis)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.fit.muted
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                when (pr.type) {
-                                    PrEntity.TYPE_VOLUME -> formatTonnage(pr.value)
-                                    else -> pr.value.kg()
-                                },
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.fit.gold
-                            )
-                            if (pr.reps > 0 && pr.type != PrEntity.TYPE_VOLUME) {
-                                Text(
-                                    "${pr.weightKg.trimNum()} × ${pr.reps}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.fit.muted
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 2.4: "güncel en iyiler" — hareket başına tür bazlı en iyi değerler, eski rekorlar açılır listede.
+    CurrentBestsContent(vm, nav)
 }
 
 /* ============================== Yardımcı parçalar ========================== */

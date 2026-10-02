@@ -68,6 +68,7 @@ import com.example.core.TR
 import com.example.core.formatDate
 import com.example.core.formatDateShort
 import com.example.core.formatMonthYear
+import com.example.core.formatTonnage
 import com.example.core.kg
 import com.example.core.trimNum
 import com.example.data.ExerciseEntity
@@ -396,6 +397,15 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
     val bestSet = sets.maxByOrNull { Calc.e1rm(it.weightKg, it.reps) }
     val sessionCount = sets.map { it.workoutId }.distinct().size
     val trend = remember(allSets, exerciseId) { ProgressAnalytics.trendPct(allSets.filter { it.exerciseId == exerciseId }) }
+    // Son bitmiş seansta bu hareketle yapılan tüm çalışma setleri (vm.workouts yalnızca bitmiş seansları içerir).
+    val lastSession = remember(allSets, workouts, exerciseId) {
+        val byId = workouts.associateBy { it.id }
+        val exSets = allSets.filter { it.exerciseId == exerciseId && it.workoutId in byId && Analytics.isEffectiveSet(it) }
+        val lastId = exSets.maxByOrNull { byId.getValue(it.workoutId).startedAt }?.workoutId
+        lastId?.let { id ->
+            byId.getValue(id) to exSets.filter { it.workoutId == id }.sortedWith(compareBy({ it.exerciseOrder }, { it.setNumber }))
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -432,6 +442,15 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
                         Spacer(Modifier.height(6.dp))
                         Text(m, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted)
                     }
+                }
+            }
+            lastSession?.let { (lw, lSets) ->
+                item(key = "last_session") {
+                    LastSessionCard(
+                        workout = lw,
+                        sets = lSets,
+                        onOpen = { nav.navigate("${Routes.WORKOUT_DETAIL}/${lw.id}") }
+                    )
                 }
             }
             if (nextRx != null && programDay != null) {
@@ -479,7 +498,7 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
                     )
                     DetailKpi(
                         "En iyi set",
-                        bestSet?.let { if (it.weightKg > 0f) "${it.weightKg.trimNum()}×${it.reps}" else "${it.reps}" } ?: "—",
+                        bestSet?.let { if (it.weightKg > 0f) "${it.weightKg.trimNum()} × ${it.reps}" else "${it.reps} tekrar" } ?: "—",
                         bestSet?.let { formatDateShort(it.performedAt) },
                         MaterialTheme.fit.muted,
                         Modifier.weight(1f)
@@ -642,14 +661,14 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
                             ) {
                                 Text(b.range, style = MaterialTheme.typography.labelLarge.mono(), color = MaterialTheme.fit.muted, modifier = Modifier.width(60.dp))
                                 Text(
-                                    "${b.weight.trimNum().replace('.', ',')} × ${b.reps}",
+                                    "${com.example.core.VolumeRules.label(exerciseId, ex.name, b.weight)} × ${b.reps}",
                                     style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold),
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    "1RM ${b.e1rm.trimNum().replace('.', ',')}",
+                                    "1RM ${b.e1rm.trimNum()}",
                                     style = MaterialTheme.typography.labelMedium.mono(),
-                                    color = Color(0xFF6B7483)
+                                    color = MaterialTheme.fit.muted
                                 )
                             }
                         }
@@ -698,14 +717,14 @@ fun ExerciseDetailScreen(vm: AppViewModel, nav: NavHostController, exerciseId: L
                                     Column(Modifier.weight(1f)) {
                                         Text(formatDate(p.dateMillis), style = MaterialTheme.typography.titleSmall)
                                         Text(
-                                            "${p.sets} set · ${p.totalReps} tekrar · ${p.volume.trimNum()} kg hacim",
+                                            "${p.sets} set · ${p.totalReps} tekrar · ${formatTonnage(p.volume)} hacim",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.fit.muted
                                         )
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
-                                        Text(p.topWeight.kg(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.fit.accent)
-                                        Text("1RM ${p.e1rm.trimNum()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+                                        Text(com.example.core.VolumeRules.label(exerciseId, ex.name, p.topWeight), style = MaterialTheme.typography.titleSmall.mono(), color = MaterialTheme.fit.accent)
+                                        Text("1RM ${p.e1rm.trimNum()}", style = MaterialTheme.typography.labelSmall.mono(), color = MaterialTheme.fit.muted)
                                     }
                                 }
                             }
@@ -917,5 +936,63 @@ fun ExerciseBrowserDialog(
             onSave = { vm.saveExercise(it); showCreate = false; query = it.name },
             onDismiss = { showCreate = false }
         )
+    }
+}
+
+/* ------------------------------ Son seans kartı ------------------------------ */
+
+@Composable
+private fun LastSessionCard(
+    workout: com.example.data.WorkoutEntity,
+    sets: List<com.example.data.WorkoutSetEntity>,
+    onOpen: () -> Unit
+) {
+    val fit = MaterialTheme.fit
+    val volume = sets.sumOf { it.load.toDouble() }.toFloat()
+    FitCard(onClick = onOpen, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                OverlineText("Son seans · ${formatDate(workout.startedAt)}", fit.accent)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    workout.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = fit.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                "${sets.size} set" + if (volume > 0f) " · ${formatTonnage(volume)}" else "",
+                style = MaterialTheme.typography.labelMedium.mono(),
+                color = fit.muted
+            )
+            Icon(Icons.Default.KeyboardArrowRight, null, tint = fit.muted, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        sets.forEachIndexed { i, s ->
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)))
+            Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)).background(fit.elevated),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("${i + 1}", style = MaterialTheme.typography.labelSmall.mono(), color = fit.muted)
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    when {
+                        s.durationSeconds > 0 && s.weightKg <= 0f -> "${s.durationSeconds} sn"
+                        s.weightKg > 0f -> "${com.example.core.VolumeRules.label(s.exerciseId, s.exerciseName, s.weightKg)} × ${s.reps}"
+                        else -> "${s.reps} tekrar"
+                    },
+                    style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.weight(1f)
+                )
+                if (s.rpe > 0f) {
+                    Text("RPE ${s.rpe.trimNum()}", style = MaterialTheme.typography.labelMedium.mono(), color = fit.muted)
+                }
+            }
+        }
     }
 }

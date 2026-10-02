@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -40,11 +41,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.example.core.BodyCalc
 import com.example.core.TR
 import com.example.core.formatDate
 import com.example.core.formatDateShort
@@ -74,6 +77,8 @@ import com.example.ui.theme.parseHex
 fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
     val metrics by vm.bodyMetrics.collectAsStateWithLifecycle()
     val bodyWeight by vm.settings.weightKg.collectAsStateWithLifecycle()
+    val heightCm by vm.settings.heightCm.collectAsStateWithLifecycle()
+    val isMale by vm.settings.isMale.collectAsStateWithLifecycle()
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<BodyMetricEntity?>(null) }
     var toDelete by remember { mutableStateOf<BodyMetricEntity?>(null) }
@@ -91,9 +96,20 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
         }
     }
     val filtered = values.zip(labels).filter { it.first > 0f }
-    val latest = metrics.maxByOrNull { it.dateMillis }
+    // Güncel kilo: kilo içeren en yeni kayıt (en yeni kayıt sadece çevre ölçümü olabilir)
+    val latestWeighed = sorted.lastOrNull { it.weightKg > 0f }
+    val latestFatRec = sorted.lastOrNull { it.bodyFatPct > 0f }
     val first = sorted.firstOrNull { it.weightKg > 0f }
-    val diff = if (latest != null && first != null && latest.weightKg > 0f) latest.weightKg - first.weightKg else 0f
+    val diff = if (latestWeighed != null && first != null && latestWeighed.id != first.id) latestWeighed.weightKg - first.weightKg else 0f
+
+    val weightPoints = remember(metrics) { BodyCalc.weightPoints(metrics) }
+    val weightTrend = remember(weightPoints) { BodyCalc.ewmaTrend(weightPoints) }
+    val trendChange = remember(weightPoints, weightTrend) { BodyCalc.trendChange(weightPoints, weightTrend, 30) }
+
+    val lastNeck = BodyCalc.latestOf(metrics) { it.neckCm }
+    val lastWaist = BodyCalc.latestOf(metrics) { it.waistCm }
+    val lastHip = BodyCalc.latestOf(metrics) { it.hipCm }
+    val navyFat = BodyCalc.navyBodyFat(isMale, heightCm, lastNeck, lastWaist, lastHip)
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Vücut ölçümleri", "${metrics.size} kayıt", onBack = { nav.popBackStack() }) {
@@ -120,21 +136,58 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         StatTile(
                             "Güncel kilo",
-                            latest?.weightKg?.takeIf { it > 0f }?.let { "${it.trimNum()} kg" } ?: "—",
+                            latestWeighed?.let { "${it.weightKg.trimNum()} kg" } ?: "—",
                             Modifier.weight(1f),
-                            caption = if (diff != 0f) (if (diff > 0) "▲ +${diff.trimNum()} kg" else "▼ ${diff.trimNum()} kg") else null,
+                            caption = if (kotlin.math.abs(diff) >= 0.05f) (if (diff > 0) "▲ ${diff.trimNum()} kg" else "▼ ${(-diff).trimNum()} kg") else null,
                             captionColor = if (diff > 0) MaterialTheme.fit.warning else MaterialTheme.fit.success
                         )
                         StatTile(
                             "Yağ oranı",
-                            latest?.bodyFatPct?.takeIf { it > 0f }?.let { "%${it.trimNum()}" } ?: "—",
-                            Modifier.weight(1f)
+                            latestFatRec?.let { "%${it.bodyFatPct.trimNum()}" } ?: navyFat?.let { "~%${it.trimNum()}" } ?: "—",
+                            Modifier.weight(1f),
+                            caption = when {
+                                latestFatRec != null && navyFat != null -> "Navy: %${navyFat.trimNum()}"
+                                latestFatRec == null && navyFat != null -> "Navy tahmini"
+                                else -> null
+                            }
                         )
                     }
                 }
 
                 item {
-                    com.example.ui.components.ProgressPhotosCard(latest?.weightKg?.takeIf { it > 0f } ?: bodyWeight)
+                    FitCard {
+                        if (trendChange != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Kilo trendi", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1f))
+                                Text(
+                                    "Trend: ${signedKg(trendChange.deltaKg)} / ${trendChange.spanDays} gün",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (navyFat != null) {
+                            Text("Tahmini yağ oranı (Navy): %${navyFat.trimNum()}", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Boy ${heightCm.trimNum()} · boyun ${lastNeck.trimNum()} · bel ${lastWaist.trimNum()}" +
+                                    (if (!isMale) " · kalça ${lastHip.trimNum()}" else "") + " cm ölçümlerinden",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.fit.muted
+                            )
+                        } else {
+                            Text(
+                                if (isMale) "Navy yağ oranı tahmini için boyun ve bel ölçümü ekle."
+                                else "Navy yağ oranı tahmini için boyun, bel ve kalça ölçümü ekle.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.fit.muted
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    com.example.ui.components.ProgressPhotosCard(latestWeighed?.weightKg ?: bodyWeight)
                 }
 
                 item {
@@ -142,7 +195,9 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
                         PillTabs(listOf("Kilo", "Yağ %", "Bel", "Göğüs", "Kol"), metric) { metric = it }
                         Spacer(Modifier.height(12.dp))
                         FitCard {
-                            if (filtered.size >= 2) {
+                            if (metric == 0 && weightPoints.size >= 2) {
+                                WeightTrendChart(weightPoints, weightTrend, height = 180.dp)
+                            } else if (metric != 0 && filtered.size >= 2) {
                                 LineChart(
                                     filtered.map { it.first },
                                     filtered.map { it.second },
@@ -183,6 +238,7 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
                             if (m.chestCm > 0f) Badge("Göğüs ${m.chestCm.trimNum()}", MaterialTheme.fit.muted)
                             if (m.waistCm > 0f) Badge("Bel ${m.waistCm.trimNum()}", MaterialTheme.fit.muted)
                             if (m.hipCm > 0f) Badge("Kalça ${m.hipCm.trimNum()}", MaterialTheme.fit.muted)
+                            if (m.neckCm > 0f) Badge("Boyun ${m.neckCm.trimNum()}", MaterialTheme.fit.muted)
                             if (m.armCm > 0f) Badge("Kol ${m.armCm.trimNum()}", MaterialTheme.fit.muted)
                             if (m.thighCm > 0f) Badge("Bacak ${m.thighCm.trimNum()}", MaterialTheme.fit.muted)
                         }
@@ -195,6 +251,8 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
     if (showAdd || editing != null) {
         BodyMetricDialog(
             initial = editing,
+            heightCm = heightCm,
+            isMale = isMale,
             onSave = { m -> vm.saveBodyMetric(m); showAdd = false; editing = null },
             onDismiss = { showAdd = false; editing = null }
         )
@@ -215,9 +273,13 @@ fun BodyScreen(vm: AppViewModel, nav: NavHostController) {
 @Composable
 private fun BodyMetricDialog(
     initial: BodyMetricEntity?,
+    heightCm: Float,
+    isMale: Boolean,
     onSave: (BodyMetricEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    var dateMillis by remember { mutableStateOf(initial?.dateMillis ?: System.currentTimeMillis()) }
     fun f(v: Float) = if (v > 0f) v.trimNum() else ""
     var weight by remember { mutableStateOf(f(initial?.weightKg ?: 0f)) }
     var fat by remember { mutableStateOf(f(initial?.bodyFatPct ?: 0f)) }
@@ -230,6 +292,7 @@ private fun BodyMetricDialog(
     var note by remember { mutableStateOf(initial?.note ?: "") }
 
     fun p(s: String) = s.replace(',', '.').toFloatOrNull() ?: 0f
+    val navyEstimate = BodyCalc.navyBodyFat(isMale, heightCm, p(neck), p(waist), p(hip))
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -238,6 +301,18 @@ private fun BodyMetricDialog(
         title = { Text(if (initial == null) "Yeni ölçüm" else "Ölçümü düzenle", style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.fit.elevated)
+                        .clickable { pickDate(context, dateMillis) { dateMillis = it } }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Tarih", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1f))
+                    Text(formatDate(dateMillis), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.fit.accent)
+                }
                 run {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FitTextField(weight, { weight = it }, "Kilo (kg)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
@@ -262,6 +337,25 @@ private fun BodyMetricDialog(
                         FitTextField(thigh, { thigh = it }, "Bacak (cm)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
                     }
                 }
+                if (navyEstimate != null) {
+                    if (fat.isBlank()) {
+                        Text(
+                            "Navy tahmini: %${navyEstimate.trimNum()} — yağ alanına yaz",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.fit.accent,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { fat = navyEstimate.trimNum() }
+                                .padding(vertical = 4.dp)
+                        )
+                    } else {
+                        Text(
+                            "Navy tahmini: %${navyEstimate.trimNum()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.fit.muted
+                        )
+                    }
+                }
                 FitTextField(note, { note = it }, "Not", singleLine = false, minLines = 2)
             }
         },
@@ -271,13 +365,34 @@ private fun BodyMetricDialog(
                     (initial ?: BodyMetricEntity()).copy(
                         weightKg = p(weight), bodyFatPct = p(fat), chestCm = p(chest),
                         waistCm = p(waist), hipCm = p(hip), armCm = p(arm),
-                        thighCm = p(thigh), neckCm = p(neck), note = note.trim()
+                        thighCm = p(thigh), neckCm = p(neck), note = note.trim(),
+                        dateMillis = dateMillis
                     )
                 )
             }) { Text("Kaydet", color = MaterialTheme.fit.accent, style = MaterialTheme.typography.titleMedium) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç", color = MaterialTheme.fit.muted) } }
     )
+}
+
+/** Sadece tarih seçer; saat önceki değerden korunur. Gelecek tarih seçilemez. */
+private fun pickDate(context: android.content.Context, initialMillis: Long, onSelected: (Long) -> Unit) {
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = initialMillis }
+    val dpd = DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            cal.set(java.util.Calendar.YEAR, year)
+            cal.set(java.util.Calendar.MONTH, month)
+            cal.set(java.util.Calendar.DAY_OF_MONTH, dayOfMonth)
+            onSelected(minOf(cal.timeInMillis, System.currentTimeMillis()))
+        },
+        cal.get(java.util.Calendar.YEAR),
+        cal.get(java.util.Calendar.MONTH),
+        cal.get(java.util.Calendar.DAY_OF_MONTH)
+    )
+    dpd.datePicker.maxDate = System.currentTimeMillis()
+    dpd.setTitle("Ölçüm tarihi")
+    dpd.show()
 }
 
 /* ================================== Notlar ================================== */

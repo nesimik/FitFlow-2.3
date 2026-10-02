@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,8 +37,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.example.core.Calc
+import com.example.core.PlateSolver
+import com.example.core.formatDateShort
 import com.example.core.kg
 import com.example.core.trimNum
+import com.example.data.WorkoutSetEntity
 import com.example.ui.AppViewModel
 import com.example.ui.components.ChoiceChip
 import com.example.ui.components.FitCard
@@ -43,13 +49,14 @@ import com.example.ui.components.FitTextField
 import com.example.ui.components.KeyValueRow
 import com.example.ui.components.OverlineText
 import com.example.ui.components.PillTabs
-import com.example.ui.components.SectionHeader
 import com.example.ui.theme.Palette
 import com.example.ui.theme.fit
 
 @Composable
 fun ToolsScreen(vm: AppViewModel, nav: NavHostController) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Her aracın rememberSaveable durumu sekme değişince korunur (SaveableStateProvider).
+    val stateHolder = rememberSaveableStateHolder()
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Hesaplayıcılar", "Antrenman planlaman için pratik araçlar", onBack = { nav.popBackStack() })
@@ -57,25 +64,62 @@ fun ToolsScreen(vm: AppViewModel, nav: NavHostController) {
             PillTabs(listOf("1RM", "Plaka", "Isınma", "Vücut"), tab) { tab = it }
         }
         Spacer(Modifier.height(14.dp))
-        when (tab) {
-            0 -> OneRmTool()
-            1 -> PlateTool(vm)
-            2 -> WarmupTool(vm)
-            else -> BodyTool(vm)
+        stateHolder.SaveableStateProvider("tool_$tab") {
+            when (tab) {
+                0 -> OneRmTool(vm)
+                1 -> PlateTool(vm)
+                2 -> WarmupTool(vm)
+                else -> BodyTool(vm)
+            }
         }
     }
 }
 
 /* ---------------------------------- 1RM ------------------------------------ */
 
+/** Bir hareketin en iyi tahmini 1RM'i veren efektif seti. */
+private data class LiftBest(
+    val exerciseId: Long,
+    val name: String,
+    val weightKg: Float,
+    val reps: Int,
+    val e1rm: Float,
+    val performedAt: Long,
+    val lastAt: Long
+)
+
+private fun bestLifts(sets: List<WorkoutSetEntity>): List<LiftBest> =
+    sets.asSequence()
+        .filter { it.isCompleted && !it.isWarmup && it.weightKg > 0f && it.reps in 1..12 }
+        .groupBy { it.exerciseId }
+        .mapNotNull { (id, list) ->
+            val best = list.maxByOrNull { Calc.e1rm(it.weightKg, it.reps) } ?: return@mapNotNull null
+            val newest = list.maxByOrNull { it.performedAt } ?: best
+            LiftBest(
+                exerciseId = id,
+                name = newest.exerciseName,
+                weightKg = best.weightKg,
+                reps = best.reps,
+                e1rm = Calc.e1rm(best.weightKg, best.reps),
+                performedAt = best.performedAt,
+                lastAt = newest.performedAt
+            )
+        }
+        .sortedByDescending { it.lastAt }
+
 @Composable
-private fun OneRmTool() {
-    var weight by remember { mutableStateOf("60") }
-    var reps by remember { mutableStateOf("8") }
+private fun OneRmTool(vm: AppViewModel) {
+    val allSets by vm.allSets.collectAsStateWithLifecycle()
+    val lifts = remember(allSets) { bestLifts(allSets) }
+
+    var weight by rememberSaveable { mutableStateOf("60") }
+    var reps by rememberSaveable { mutableStateOf("8") }
+    var selectedEx by rememberSaveable { mutableStateOf(-1L) }
 
     val w = weight.replace(',', '.').toFloatOrNull() ?: 0f
     val r = reps.toIntOrNull() ?: 0
     val e1rm = Calc.e1rm(w, r)
+    val selectedLift = lifts.firstOrNull { it.exerciseId == selectedEx }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
@@ -83,6 +127,31 @@ private fun OneRmTool() {
     ) {
         item {
             FitCard {
+                if (lifts.isNotEmpty()) {
+                    OverlineText("Hareketlerinden doldur")
+                    Spacer(Modifier.height(7.dp))
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        lifts.take(20).forEach { l ->
+                            ChoiceChip(l.name, selectedEx == l.exerciseId, {
+                                selectedEx = l.exerciseId
+                                weight = l.weightKg.trimNum()
+                                reps = l.reps.toString()
+                            })
+                        }
+                    }
+                    if (selectedLift != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "En iyi set: ${selectedLift.weightKg.trimNum()} kg × ${selectedLift.reps} · ${formatDateShort(selectedLift.performedAt)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.fit.muted
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FitTextField(weight, { weight = it }, "Ağırlık (kg)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
                     FitTextField(reps, { reps = it.filter { c -> c.isDigit() } }, "Tekrar", Modifier.weight(1f), keyboardType = KeyboardType.Number)
@@ -129,7 +198,7 @@ private fun OneRmTool() {
                     )
                     Spacer(Modifier.height(10.dp))
                     Calc.percentTable(e1rm).forEach { (pct, value) ->
-                        val reps = when {
+                        val repsLabel = when {
                             pct >= 95 -> "1-2 tekrar"
                             pct >= 90 -> "3-4 tekrar"
                             pct >= 85 -> "5-6 tekrar"
@@ -144,7 +213,7 @@ private fun OneRmTool() {
                         ) {
                             Text("%$pct", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(52.dp), color = MaterialTheme.fit.accent)
                             Text(value.kg(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            Text(reps, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+                            Text(repsLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
                         }
                     }
                 }
@@ -158,12 +227,14 @@ private fun OneRmTool() {
 @Composable
 private fun PlateTool(vm: AppViewModel) {
     val barDefault by vm.settings.barWeight.collectAsStateWithLifecycle()
-    var target by remember { mutableStateOf("60") }
-    var bar by remember { mutableStateOf(barDefault) }
+    val userPlates by vm.settings.plates.collectAsStateWithLifecycle()
+    var target by rememberSaveable { mutableStateOf("60") }
+    var bar by rememberSaveable { mutableStateOf(barDefault) }
 
     val total = target.replace(',', '.').toFloatOrNull() ?: 0f
-    val plates = Calc.plates(total, bar)
-    val achievable = Calc.achievableWeight(total, bar)
+    val result = remember(total, bar, userPlates) { PlateSolver.solve(total, bar, userPlates) }
+    val barOptions = remember(barDefault) { (listOf(10f, 15f, 20f, 25f) + barDefault).filter { it > 0f }.distinct().sorted() }
+    val shown = result.best
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
@@ -175,58 +246,97 @@ private fun PlateTool(vm: AppViewModel) {
                 Spacer(Modifier.height(12.dp))
                 OverlineText("Bar ağırlığı")
                 Spacer(Modifier.height(7.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(10f, 15f, 20f, 25f).forEach { v ->
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    barOptions.forEach { v ->
                         ChoiceChip("${v.trimNum()} kg", bar == v, { bar = v })
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Plakaların: " + userPlates.filter { it > 0f }.sortedDescending().joinToString(" · ") { it.trimNum() } + " kg (Ayarlar › Ekipman)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.fit.muted
+                )
             }
         }
         item {
             FitCard {
                 OverlineText("Her iki tarafa takılacak")
                 Spacer(Modifier.height(12.dp))
-                if (plates.isEmpty()) {
-                    Text(
-                        "Bu ağırlık bar ile eşit ya da altında. Plaka gerekmiyor.",
+                when {
+                    total <= 0f -> Text(
+                        "Hedef ağırlığı gir.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.fit.muted
                     )
-                } else {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        plates.take(12).forEach { p ->
-                            Box(
-                                Modifier
-                                    .width(30.dp)
-                                    .height((34 + p * 2.4f).dp.coerceAtMost(110.dp))
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(plateColor(p)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    p.trimNum(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = androidx.compose.ui.graphics.Color.White,
-                                    textAlign = TextAlign.Center
+                    result.belowBar -> Text(
+                        "Hedef, bar ağırlığından (${bar.trimNum()} kg) düşük. Bu barla en az ${bar.trimNum()} kg kurulabilir.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.fit.warning
+                    )
+                    else -> {
+                        if (result.exact == null) {
+                            val options = listOfNotNull(result.below?.totalKg, result.above?.totalKg).distinct()
+                            Text(
+                                "Tam kurulamaz — en yakın: " + options.joinToString(" / ") { "${it.trimNum()} kg" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.fit.warning
+                            )
+                            Spacer(Modifier.height(10.dp))
+                        }
+                        if (shown == null || shown.perSide.isEmpty()) {
+                            Text(
+                                "Sadece bar — plaka gerekmiyor.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.fit.muted
+                            )
+                        } else {
+                            PlateStack(shown.perSide)
+                            Spacer(Modifier.height(14.dp))
+                            KeyValueRow("Tek taraf", shown.perSide.joinToString(" + ") { it.trimNum() } + " = " + shown.perSide.sum().kg())
+                            KeyValueRow("Ulaşılan ağırlık", shown.totalKg.kg(), if (result.exact != null) MaterialTheme.fit.success else MaterialTheme.fit.warning)
+                        }
+                        if (result.exact == null) {
+                            val other = listOfNotNull(result.below, result.above).firstOrNull { it != shown }
+                            if (other != null) {
+                                KeyValueRow(
+                                    "Alternatif ${other.totalKg.trimNum()} kg",
+                                    if (other.perSide.isEmpty()) "sadece bar" else other.perSide.joinToString(" + ") { it.trimNum() }
                                 )
                             }
                         }
                     }
-                    Spacer(Modifier.height(14.dp))
-                    KeyValueRow("Tek taraf toplamı", (plates.sum()).kg())
-                    KeyValueRow("Ulaşılan ağırlık", achievable.kg())
-                    if (kotlin.math.abs(achievable - total) > 0.01f) {
-                        Text(
-                            "Not: Elindeki plakalarla tam ${total.trimNum()} kg yapılamıyor, en yakın değer ${achievable.trimNum()} kg.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.fit.warning
-                        )
-                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlateStack(plates: List<Float>) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        plates.forEach { p ->
+            Box(
+                Modifier
+                    .width(30.dp)
+                    .height((34 + p * 2.4f).dp.coerceAtMost(110.dp))
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(plateColor(p)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    p.trimNum(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = androidx.compose.ui.graphics.Color.White,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -246,9 +356,23 @@ private fun plateColor(p: Float) = when (p) {
 @Composable
 private fun WarmupTool(vm: AppViewModel) {
     val barDefault by vm.settings.barWeight.collectAsStateWithLifecycle()
-    var working by remember { mutableStateOf("80") }
+    val userPlates by vm.settings.plates.collectAsStateWithLifecycle()
+    var working by rememberSaveable { mutableStateOf("80") }
+    var barbell by rememberSaveable { mutableStateOf(true) }
     val w = working.replace(',', '.').toFloatOrNull() ?: 0f
-    val scheme = Calc.warmupScheme(w, barDefault)
+
+    // Barbell: her ısınma ağırlığı plakalarınla kurulabilecek en yakın değere yuvarlanır.
+    val scheme = remember(w, barDefault, userPlates, barbell) {
+        val base = Calc.warmupScheme(w, barDefault)
+        if (!barbell) base
+        else {
+            val rounded = base.map { (weight, reps) ->
+                PlateSolver.nearestTotal(weight, barDefault, userPlates) to reps
+            }.distinctBy { it.first }
+            val belowWorking = rounded.filter { it.first < w - 0.001f || w <= barDefault }
+            belowWorking.ifEmpty { listOf(barDefault to 10) }
+        }
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
@@ -257,9 +381,15 @@ private fun WarmupTool(vm: AppViewModel) {
         item {
             FitCard {
                 FitTextField(working, { working = it }, "Çalışma ağırlığın (kg)", keyboardType = KeyboardType.Decimal)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChoiceChip("Barbell (${barDefault.trimNum()} kg bar)", barbell, { barbell = true })
+                    ChoiceChip("Diğer", !barbell, { barbell = false })
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Bileşik hareketlerde (squat, bench, deadlift) sakatlanmayı önlemek ve sinir sistemini hazırlamak için kademeli ısınma önerilir.",
+                    "Bileşik hareketlerde (squat, bench, deadlift) sakatlanmayı önlemek ve sinir sistemini hazırlamak için kademeli ısınma önerilir." +
+                        if (barbell) " Ağırlıklar plakalarınla kurulabilecek en yakın değere yuvarlanır." else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.fit.muted
                 )
@@ -281,7 +411,19 @@ private fun WarmupTool(vm: AppViewModel) {
                             Text("${i + 1}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.accent)
                         }
                         Spacer(Modifier.width(12.dp))
-                        Text(weight.kg(), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text(weight.kg(), style = MaterialTheme.typography.titleMedium)
+                            if (barbell) {
+                                val perSide = PlateSolver.solve(weight, barDefault, userPlates).exact?.perSide
+                                if (perSide != null) {
+                                    Text(
+                                        if (perSide.isEmpty()) "sadece bar" else "her yana: " + perSide.joinToString(" + ") { it.trimNum() },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.fit.muted
+                                    )
+                                }
+                            }
+                        }
                         Text("$reps tekrar", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.fit.muted)
                     }
                 }
@@ -311,11 +453,11 @@ private fun BodyTool(vm: AppViewModel) {
     val ageDefault by vm.settings.age.collectAsStateWithLifecycle()
     val maleDefault by vm.settings.isMale.collectAsStateWithLifecycle()
 
-    var h by remember { mutableStateOf(heightDefault.trimNum()) }
-    var w by remember { mutableStateOf(weightDefault.trimNum()) }
-    var a by remember { mutableStateOf(ageDefault.toString()) }
-    var male by remember { mutableStateOf(maleDefault) }
-    var activity by remember { mutableIntStateOf(1) }
+    var h by rememberSaveable { mutableStateOf(heightDefault.trimNum()) }
+    var w by rememberSaveable { mutableStateOf(weightDefault.trimNum()) }
+    var a by rememberSaveable { mutableStateOf(ageDefault.toString()) }
+    var male by rememberSaveable { mutableStateOf(maleDefault) }
+    var activity by rememberSaveable { mutableIntStateOf(1) }
 
     val hv = h.replace(',', '.').toFloatOrNull() ?: 0f
     val wv = w.replace(',', '.').toFloatOrNull() ?: 0f
@@ -324,7 +466,7 @@ private fun BodyTool(vm: AppViewModel) {
     val bmr = Calc.bmr(wv, hv, av, male)
     val factors = listOf(1.2f, 1.375f, 1.55f, 1.725f, 1.9f)
     val labels = listOf("Hareketsiz", "Hafif", "Orta", "Aktif", "Çok aktif")
-    val tdee = Calc.tdee(bmr, factors[activity])
+    val tdee = Calc.tdee(bmr, factors[activity.coerceIn(0, factors.lastIndex)])
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
@@ -376,7 +518,10 @@ private fun BodyTool(vm: AppViewModel) {
             FitCard {
                 OverlineText("Günlük kalori ihtiyacı")
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     labels.forEachIndexed { i, l ->
                         ChoiceChip(l, activity == i, { activity = i })
                     }
@@ -388,7 +533,7 @@ private fun BodyTool(vm: AppViewModel) {
                 KeyValueRow("Yağ kaybı (−%15)", "${(tdee * 0.85f).toInt()} kcal")
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Protein hedefi olarak vücut ağırlığının kilogramı başına 1.6–2.2 g yaygın bir öneridir (≈ ${(wv * 1.8f).toInt()} g/gün).",
+                    "Protein hedefi olarak vücut ağırlığının kilogramı başına 1,6–2,2 g yaygın bir öneridir (≈ ${(wv * 1.8f).toInt()} g/gün).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.fit.muted
                 )

@@ -5,6 +5,12 @@ import android.app.TimePickerDialog
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.core.startOfDay
+import com.example.ui.components.ChoiceChip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,25 +106,65 @@ import com.example.ui.components.DeloadPurpleContainerLight
 
 /* ================================== Geçmiş ================================== */
 
+private const val HF_ALL = "all"
+private const val HF_DELOAD = "deload"
+private const val HF_PR = "pr"
+private const val HF_DAY = "day:"
+
 @Composable
 fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
     val workouts by vm.workouts.collectAsStateWithLifecycle()
     val allSets by vm.allSets.collectAsStateWithLifecycle()
+    val prs by vm.prs.collectAsStateWithLifecycle()
+    val routineDays by vm.routineDays.collectAsStateWithLifecycle()
+    val activeW by vm.activeWorkout.collectAsStateWithLifecycle()
     val activeDeloadWeekStart by vm.settings.activeDeloadWeekStart.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var toDelete by remember { mutableStateOf<WorkoutEntity?>(null) }
     var editingWorkoutDate by remember { mutableStateOf<WorkoutEntity?>(null) }
     var showAddPastWorkout by remember { mutableStateOf(false) }
+    var repeatAsk by remember { mutableStateOf<WorkoutEntity?>(null) }
+    var filterKey by rememberSaveable { mutableStateOf(HF_ALL) }
+    var selectedDay by rememberSaveable { mutableStateOf<Long?>(null) }
+    var monthOffset by rememberSaveable { mutableIntStateOf(0) }
 
-    val filtered = remember(workouts, allSets, query) {
-        if (query.isBlank()) workouts
-        else {
-            val q = query.lowercase(TR)
-            workouts.filter { w ->
-                w.title.lowercase(TR).contains(q) ||
-                    formatDate(w.startedAt).lowercase(TR).contains(q) ||
-                    allSets.any { it.workoutId == w.id && it.exerciseName.lowercase(TR).contains(q) }
+    fun startNew() = vm.startWorkout(null) { id -> nav.navigate("${Routes.WORKOUT}/$id") }
+    fun repeatNow(w: WorkoutEntity) = vm.repeatWorkout(w.id) { id -> nav.navigate("${Routes.WORKOUT}/$id") }
+
+    // Performans: setler seans başına bir kez gruplanır; satırlar ve başlıklar bu haritayı kullanır.
+    val setsByWorkout = remember(allSets) { allSets.groupBy { it.workoutId } }
+    val volumeByWorkout = remember(setsByWorkout) {
+        setsByWorkout.mapValues { (_, list) ->
+            list.filter { Analytics.isEffectiveSet(it) }.sumOf { it.load.toDouble() }.toFloat()
+        }
+    }
+    val prWorkoutIds = remember(prs) { prs.mapTo(HashSet()) { it.workoutId } }
+    val dayVolumes = remember(workouts, volumeByWorkout) {
+        val m = HashMap<Long, Float>()
+        workouts.forEach { w ->
+            val k = startOfDay(w.startedAt)
+            m[k] = (m[k] ?: 0f) + (volumeByWorkout[w.id] ?: 0f)
+        }
+        m
+    }
+    val dayCounts = remember(workouts) { workouts.groupingBy { startOfDay(it.startedAt) }.eachCount() }
+
+    val filtered = remember(workouts, setsByWorkout, query, filterKey, selectedDay, prWorkoutIds, activeDeloadWeekStart) {
+        val q = query.trim().lowercase(TR)
+        val dayFilterId = if (filterKey.startsWith(HF_DAY)) filterKey.removePrefix(HF_DAY).toLongOrNull() else null
+        workouts.filter { w ->
+            val passFilter = when {
+                filterKey == HF_DELOAD -> w.isDeload || (activeDeloadWeekStart > 0L && startOfWeek(w.startedAt) == activeDeloadWeekStart)
+                filterKey == HF_PR -> w.id in prWorkoutIds
+                dayFilterId != null -> w.routineDayId == dayFilterId
+                else -> true
             }
+            passFilter &&
+                (selectedDay == null || startOfDay(w.startedAt) == selectedDay) &&
+                (q.isEmpty() ||
+                    w.title.lowercase(TR).contains(q) ||
+                    formatDate(w.startedAt).lowercase(TR).contains(q) ||
+                    setsByWorkout[w.id].orEmpty().any { it.exerciseName.lowercase(TR).contains(q) })
         }
     }
     val groupedByMonth = remember(filtered) { filtered.groupBy { formatMonthYear(it.startedAt) } }
@@ -142,31 +188,82 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
             }
         }
 
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            SearchField(query, { query = it }, "Seans, tarih veya hareket ara…")
-        }
-        Spacer(Modifier.height(10.dp))
-
-        if (filtered.isEmpty()) {
-            EmptyState(
-                Icons.Default.History,
-                if (workouts.isEmpty()) "Henüz kayıt yok" else "Sonuç bulunamadı",
-                if (workouts.isEmpty()) "Tamamladığın antrenmanlar burada listelenir."
-                else "Arama kriterlerine uyan bir seans yok."
-            )
+        if (workouts.isEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                EmptyState(
+                    Icons.Default.History,
+                    "Henüz kayıt yok",
+                    "Tamamladığın antrenmanlar burada listelenir. İlk seansını başlat ya da daha önce yaptığın bir antrenmanı ekle.",
+                    actionLabel = "Antrenman başlat",
+                    onAction = { startNew() }
+                )
+                GhostButton(
+                    text = "Geçmiş antrenman ekle",
+                    onClick = { showAddPastWorkout = true },
+                    icon = Icons.Default.Add,
+                    color = MaterialTheme.fit.accent
+                )
+            }
         } else {
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                SearchField(query, { query = it }, "Seans, tarih veya hareket ara…")
+            }
+            Spacer(Modifier.height(10.dp))
+
             LazyColumn(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 110.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                item(key = "calendar") {
+                    HistoryMonthCalendar(
+                        monthOffset = monthOffset,
+                        onMonthOffset = { monthOffset = it },
+                        dayVolumes = dayVolumes,
+                        dayCounts = dayCounts,
+                        selectedDay = selectedDay,
+                        onDayClick = { day -> selectedDay = if (selectedDay == day) null else day }
+                    )
+                }
+
+                item(key = "filters") {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        selectedDay?.let { day ->
+                            ChoiceChip("${formatDateShort(day)}  ✕", true, { selectedDay = null }, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        ChoiceChip("Tümü", filterKey == HF_ALL, { filterKey = HF_ALL; selectedDay = null })
+                        routineDays.forEach { d ->
+                            val key = "$HF_DAY${d.id}"
+                            ChoiceChip(d.name, filterKey == key, { filterKey = if (filterKey == key) HF_ALL else key })
+                        }
+                        ChoiceChip("Deload", filterKey == HF_DELOAD, { filterKey = if (filterKey == HF_DELOAD) HF_ALL else HF_DELOAD }, color = DeloadPurple)
+                        ChoiceChip("🏆 Rekorlu", filterKey == HF_PR, { filterKey = if (filterKey == HF_PR) HF_ALL else HF_PR }, color = MaterialTheme.fit.gold)
+                    }
+                }
+
+                if (filtered.isEmpty()) {
+                    item(key = "empty") {
+                        EmptyState(
+                            Icons.Default.History,
+                            "Sonuç bulunamadı",
+                            "Arama veya filtrelere uyan bir seans yok.",
+                            actionLabel = "Filtreleri temizle",
+                            onAction = { filterKey = HF_ALL; selectedDay = null; query = "" }
+                        )
+                    }
+                }
+
                 groupedByMonth.forEach { (month, monthList) ->
                     val isMonthCollapsed = collapsedMonths[month] == true
+                    val monthVolume = monthList.sumOf { (volumeByWorkout[it.id] ?: 0f).toDouble() }.toFloat()
 
                     item(key = "month_$month") {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(top = 10.dp)
+                                .padding(top = 8.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { collapsedMonths[month] = !isMonthCollapsed }
                                 .padding(vertical = 6.dp, horizontal = 4.dp),
@@ -184,10 +281,8 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
                                 OverlineText(month, MaterialTheme.fit.accent)
                             }
                             Text(
-                                "${monthList.size} seans · " + formatTonnage(
-                                    monthList.sumOf { Analytics.workoutVolume(it.id, allSets).toDouble() }.toFloat()
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
+                                "${monthList.size} seans · ${formatTonnage(monthVolume)}",
+                                style = MaterialTheme.typography.labelSmall.mono(),
                                 color = MaterialTheme.fit.muted
                             )
                         }
@@ -201,9 +296,9 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
                             val isWeekCollapsed = collapsedWeeks[weekKey] == true
                             val weekEndMillis = weekStartMillis + 6 * 86_400_000L
                             val weekLabel = when (weekStartMillis) {
-                                nowWeekStart -> "Bu Hafta (${formatDateShort(weekStartMillis)} - ${formatDateShort(weekEndMillis)})"
-                                nowWeekStart - 7 * 86_400_000L -> "Geçen Hafta (${formatDateShort(weekStartMillis)} - ${formatDateShort(weekEndMillis)})"
-                                else -> "${formatDateShort(weekStartMillis)} - ${formatDateShort(weekEndMillis)}"
+                                nowWeekStart -> "Bu hafta · ${formatDateShort(weekStartMillis)} – ${formatDateShort(weekEndMillis)}"
+                                nowWeekStart - 7 * 86_400_000L -> "Geçen hafta · ${formatDateShort(weekStartMillis)} – ${formatDateShort(weekEndMillis)}"
+                                else -> "${formatDateShort(weekStartMillis)} – ${formatDateShort(weekEndMillis)}"
                             }
                             val isWeekDeload = (activeDeloadWeekStart == weekStartMillis) || weekList.any { it.isDeload }
 
@@ -211,28 +306,31 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 4.dp, bottom = 2.dp)
-                                        .clip(RoundedCornerShape(6.dp))
+                                        .padding(top = 2.dp, bottom = 2.dp)
+                                        .clip(RoundedCornerShape(8.dp))
                                         .background(if (isWeekDeload) DeloadPurple.copy(alpha = 0.08f) else Color.Transparent)
                                         .clickable { collapsedWeeks[weekKey] = !isWeekCollapsed }
-                                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             if (isWeekCollapsed) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
                                             contentDescription = null,
-                                            tint = if (isWeekDeload) DeloadPurple else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            tint = if (isWeekDeload) DeloadPurple else MaterialTheme.fit.muted,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(Modifier.width(6.dp))
                                         Text(
                                             weekLabel,
                                             style = MaterialTheme.typography.labelMedium.copy(
-                                                fontWeight = if (isWeekDeload) FontWeight.Bold else FontWeight.Normal
+                                                fontWeight = if (isWeekDeload) FontWeight.Bold else FontWeight.Medium
                                             ),
-                                            color = if (isWeekDeload) DeloadPurple else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                                            color = if (isWeekDeload) DeloadPurple else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
                                         if (isWeekDeload) {
                                             Spacer(Modifier.width(6.dp))
@@ -242,7 +340,7 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             "${weekList.size} seans",
-                                            style = MaterialTheme.typography.labelSmall,
+                                            style = MaterialTheme.typography.labelSmall.mono(),
                                             color = MaterialTheme.fit.muted
                                         )
                                         Spacer(Modifier.width(8.dp))
@@ -267,117 +365,25 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
 
                             if (!isWeekCollapsed) {
                                 items(weekList, key = { it.id }) { w ->
-                                    val workoutSets = allSets.filter { it.workoutId == w.id }
-                                    val vol = Analytics.workoutVolume(w.id, allSets)
-                                    val sets = workoutSets.count { Analytics.isEffectiveSet(it) }
-                                    val exCount = if (workoutSets.isEmpty()) 0 else workoutSets.groupBy { it.exerciseOrder }.size
-
-                                    val isDeloadCard = w.isDeload || isWeekDeload
-                                    val isDarkTheme = MaterialTheme.colorScheme.background.run { (red + green + blue) < 1.5f }
-                                    val cardContainer = if (isDeloadCard) {
-                                        if (isDarkTheme) DeloadPurpleContainerDark else DeloadPurpleContainerLight
-                                    } else {
-                                        MaterialTheme.colorScheme.surface
-                                    }
-                                    val cardBorder = if (isDeloadCard) DeloadBorderPurple else MaterialTheme.fit.cardBorder
-
-                                    FitCard(
+                                    HistoryWorkoutCard(
+                                        w = w,
+                                        sets = setsByWorkout[w.id].orEmpty(),
+                                        volume = volumeByWorkout[w.id] ?: 0f,
+                                        hasPr = w.id in prWorkoutIds,
+                                        isDeloadCard = w.isDeload || isWeekDeload,
                                         onClick = { nav.navigate("${Routes.WORKOUT_DETAIL}/${w.id}") },
-                                        container = cardContainer,
-                                        border = cardBorder
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        w.title,
-                                                        style = MaterialTheme.typography.titleMedium.copy(
-                                                            color = if (isDeloadCard) DeloadPurple else MaterialTheme.colorScheme.onSurface,
-                                                            fontWeight = if (isDeloadCard) FontWeight.Bold else FontWeight.Normal
-                                                        ),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.weight(1f, fill = false)
-                                                    )
-                                                    if (isDeloadCard) {
-                                                        Spacer(Modifier.width(6.dp))
-                                                        Badge("DELOAD", color = DeloadPurple)
-                                                    }
-                                                }
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Icon(
-                                                        Icons.Default.CalendarToday,
-                                                        contentDescription = null,
-                                                        tint = if (isDeloadCard) DeloadPurple else MaterialTheme.fit.accent,
-                                                        modifier = Modifier.size(13.dp)
-                                                    )
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text(
-                                                        formatDateTime(w.startedAt),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.fit.muted
-                                                    )
-                                                }
+                                        onCopy = {
+                                            vm.duplicateWorkout(w.id) { newId ->
+                                                nav.navigate("${Routes.WORKOUT_DETAIL}/$newId")
                                             }
-                                            if (w.feeling > 0) {
-                                                Text(feelingEmoji(w.feeling), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(end = 6.dp))
-                                            }
-                                            RoundIconButton(
-                                                icon = Icons.Default.Healing,
-                                                tint = if (w.isDeload) DeloadPurple else MaterialTheme.fit.muted,
-                                                size = 36.dp,
-                                                background = if (w.isDeload) DeloadPurple.copy(alpha = 0.18f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
-                                            ) {
-                                                vm.setWorkoutDeload(w.id, !w.isDeload)
-                                            }
-                                            Spacer(Modifier.width(6.dp))
-                                            RoundIconButton(
-                                                icon = Icons.Default.ContentCopy,
-                                                tint = MaterialTheme.fit.accent,
-                                                size = 36.dp,
-                                                background = MaterialTheme.fit.accent.copy(alpha = 0.12f)
-                                            ) {
-                                                vm.duplicateWorkout(w.id) { newId ->
-                                                    nav.navigate("${Routes.WORKOUT_DETAIL}/$newId")
-                                                }
-                                            }
-                                            Spacer(Modifier.width(6.dp))
-                                            RoundIconButton(
-                                                icon = Icons.Default.Event,
-                                                tint = MaterialTheme.fit.accent,
-                                                size = 36.dp,
-                                                background = MaterialTheme.fit.accent.copy(alpha = 0.12f)
-                                            ) {
-                                                editingWorkoutDate = w
-                                            }
-                                            Spacer(Modifier.width(6.dp))
-                                            RoundIconButton(
-                                                icon = Icons.Default.Delete,
-                                                tint = MaterialTheme.colorScheme.error,
-                                                size = 36.dp,
-                                                background = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-                                            ) {
-                                                toDelete = w
-                                            }
-                                        }
-                                        Spacer(Modifier.height(10.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Badge(formatDurationShort(w.durationSeconds), MaterialTheme.fit.muted)
-                                            Badge("$exCount hareket", MaterialTheme.fit.accent)
-                                            Badge("$sets set", Palette.violet)
-                                            if (vol > 0f) Badge(formatTonnage(vol), MaterialTheme.fit.gold)
-                                        }
-                                        if (w.notes.isNotBlank()) {
-                                            Spacer(Modifier.height(8.dp))
-                                            Text(
-                                                w.notes,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.fit.muted,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    }
+                                        },
+                                        onEditDate = { editingWorkoutDate = w },
+                                        onRepeat = {
+                                            if (activeW != null && activeW?.isFinished == false) repeatAsk = w else repeatNow(w)
+                                        },
+                                        onToggleDeload = { vm.setWorkoutDeload(w.id, !w.isDeload) },
+                                        onDelete = { toDelete = w }
+                                    )
                                 }
                             }
                         }
@@ -406,6 +412,16 @@ fun HistoryScreen(vm: AppViewModel, nav: NavHostController) {
                 showAddPastWorkout = false
                 nav.navigate("${Routes.WORKOUT_DETAIL}/$workoutId")
             }
+        )
+    }
+
+    repeatAsk?.let { w ->
+        ConfirmDialog(
+            title = "Açık seans var",
+            text = "Şu an açık bir seans var. Yeni seans başlarken o seans kapatılır (işaretlediğin setler kaydedilir). Devam edilsin mi?",
+            confirmLabel = "Başlat",
+            onConfirm = { repeatAsk = null; repeatNow(w) },
+            onDismiss = { repeatAsk = null }
         )
     }
 
