@@ -657,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.39" to "İlk açılış kurulumu, hızlı kilo girişi, kilo trendi ve Navy yağ tahmini, akıllı plaka/1RM/ısınma araçları, yeni Geçmiş (takvim, filtre) ve güncel rekorlar, hareket sayfasında son seans, tekrar rekorları, widget üzerinden antrenman başlatma, ondalık virgül ve birçok hata düzeltmesi.",
     "2.38" to "Kaslar sekmesinde kas detayındaki hareket dökümü yenilendi; seans süresi büyük; dinlenme çubuğu başka ekrandayken seansa döndürür, seanstayken büyük sayacı açar.",
     "2.37" to "Gün kartları yukarı/aşağı taşınabilir; odak hareketlerden otomatik dolar; adında gün adı geçen günler o güne bağlanır, Bugün kartı haftanın gününe göre gelir.",
     "2.36" to "Kütüphaneye Dumbbell Calf Raise (Ayakta) eklendi (iki dambıl hacmi doğru sayılır); tek bacak calf raise tek dambıl sayılır.",
