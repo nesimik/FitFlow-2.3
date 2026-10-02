@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -124,7 +125,10 @@ fun ProgramDayCard(
     onEditDay: () -> Unit,
     onDuplicate: () -> Unit,
     onReplaceFromHistory: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    canMoveUp: Boolean = false,
+    canMoveDown: Boolean = false,
+    onMove: (Boolean) -> Unit = {}
 ) {
     var menu by remember { mutableStateOf(false) }
     var sheetItemId by remember { mutableStateOf<Long?>(null) }
@@ -139,6 +143,7 @@ fun ProgramDayCard(
     val running = activeWorkout?.takeIf { !it.isFinished }
     val isActiveDay = running != null && running.routineDayId == day.id
     val work = items.filter { !it.isWarmup }
+    val autoFocus = remember(items, exerciseMap) { vm.autoFocus(day.id) }
     val deloadRec by vm.deloadRecommendation.collectAsStateWithLifecycle()
     val isDeload = deloadRec.isCurrentlyDeloadWeek
     // Deload haftasında set sayısı yarıya (yukarı yuvarlanır): 3→2, 4→2, 5→3
@@ -192,7 +197,7 @@ fun ProgramDayCard(
             Column(Modifier.weight(1f)) {
                 Text(day.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOf(day.focus, "${work.size} hareket · $sets set · ~$minutes dk").filter { it.isNotBlank() }.joinToString(" · "),
+                    listOf(day.focus.ifBlank { autoFocus }, "${work.size} hareket · $sets set · ~$minutes dk").filter { it.isNotBlank() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
@@ -202,6 +207,8 @@ fun ProgramDayCard(
             Box {
                 RoundIconButton(Icons.Default.MoreVert, MaterialTheme.fit.muted, 34.dp, Color.Transparent) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (canMoveUp) DropdownMenuItem(text = { Text("Yukarı taşı") }, onClick = { menu = false; onMove(true) }, leadingIcon = { Icon(Icons.Default.KeyboardArrowUp, null) })
+                    if (canMoveDown) DropdownMenuItem(text = { Text("Aşağı taşı") }, onClick = { menu = false; onMove(false) }, leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, null) })
                     DropdownMenuItem(text = { Text("Günü düzenle") }, onClick = { menu = false; editorOpen = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
                     DropdownMenuItem(text = { Text("Geçmiş seans ile değiştir") }, onClick = { menu = false; onReplaceFromHistory() }, leadingIcon = { Icon(Icons.Default.History, null) })
                     DropdownMenuItem(text = { Text("Kopyala") }, onClick = { menu = false; onDuplicate() }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) })
@@ -769,16 +776,23 @@ private fun DayEditor(
     onAddSuperset: () -> Unit,
     onClose: () -> Unit
 ) {
+    val suggestion = remember(items, exerciseMap) { vm.autoFocus(day.id) }
+    val initialSuggestion = remember(day.id) { suggestion }
     var name by remember(day.id) { mutableStateOf(day.name) }
-    var focus by remember(day.id) { mutableStateOf(day.focus) }
+    // Odak boşsa (ya da otomatik değerdeyse) hareketlerden otomatik dolar; elle yazınca otomatik bırakılır.
+    var focusEdited by remember(day.id) { mutableStateOf(day.focus.isNotBlank() && day.focus != initialSuggestion) }
+    var focus by remember(day.id) { mutableStateOf(day.focus.ifBlank { suggestion }) }
+    LaunchedEffect(suggestion) { if (!focusEdited) focus = suggestion }
     var weekday by remember(day.id) { mutableStateOf(day.weekday) }
     val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val sorted = items.sortedBy { it.orderIndex }
 
     fun saveAndClose() {
-        if (name.isNotBlank() && (name.trim() != day.name || focus.trim() != day.focus || weekday != day.weekday)) {
-            vm.updateDay(day.copy(name = name.trim(), focus = focus.trim(), weekday = weekday))
+        // Otomatik odakta kaydedilen değer boş bırakılır; böylece hareketler değişince kartta kendiliğinden güncellenir.
+        val savedFocus = if (focusEdited) focus.trim() else ""
+        if (name.isNotBlank() && (name.trim() != day.name || savedFocus != day.focus || weekday != day.weekday)) {
+            vm.updateDay(day.copy(name = name.trim(), focus = savedFocus, weekday = weekday))
         }
         onClose()
     }
@@ -805,8 +819,18 @@ private fun DayEditor(
                                 .border(1.dp, MaterialTheme.fit.cardBorder, RoundedCornerShape(20.dp)).padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            FitTextField(name, { name = it }, "Gün adı", placeholder = "Örn: A Günü / Push")
-                            FitTextField(focus, { focus = it }, "Odak", placeholder = "Örn: Göğüs, Omuz, Triceps")
+                            FitTextField(name, {
+                                name = it
+                                // Adda gün adı geçiyorsa ve gün seçilmemişse otomatik seç ("Salı - Push")
+                                if (weekday == 0) com.example.core.weekdayFromName(it).takeIf { w -> w in 1..7 }?.let { w -> weekday = w }
+                            }, "Gün adı", placeholder = "Örn: A Günü / Push")
+                            FitTextField(focus, { focus = it; focusEdited = true }, "Odak", placeholder = "Hareketlerden otomatik dolar")
+                            if (suggestion.isNotBlank() && focus != suggestion) {
+                                Text(
+                                    "Otomatik: $suggestion  ↺", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.fit.accent,
+                                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { focus = suggestion; focusEdited = false }.padding(vertical = 4.dp)
+                                )
+                            }
                             OverlineText("Haftanın günü")
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 ChoiceChip("Serbest", weekday == 0, { weekday = 0 })

@@ -312,7 +312,10 @@ fun RoutinesScreen(vm: AppViewModel, nav: NavHostController) {
                         onEditDay = { dayToEdit = day },
                         onDuplicate = { vm.duplicateDay(day) },
                         onReplaceFromHistory = { dayToReplaceFromHistory = day },
-                        onDelete = { dayToDelete = day }
+                        onDelete = { dayToDelete = day },
+                        canMoveUp = index > 0,
+                        canMoveDown = index < days.lastIndex,
+                        onMove = { up -> vm.moveDay(day, up) }
                     )
                 }
             }
@@ -1129,8 +1132,11 @@ private fun DayDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(if (initial == null) "Yeni gün kaydet" else "Günü düzenle", style = MaterialTheme.typography.titleLarge)
-                FitTextField(name, { name = it }, "Gün adı", placeholder = "Örn: A Günü / Push")
-                FitTextField(focus, { focus = it }, "Odak", placeholder = "Örn: Göğüs, Omuz, Triceps")
+                FitTextField(name, {
+                    name = it
+                    if (weekday == 0) com.example.core.weekdayFromName(it).takeIf { w -> w in 1..7 }?.let { w -> weekday = w }
+                }, "Gün adı", placeholder = "Örn: A Günü / Push")
+                FitTextField(focus, { focus = it }, "Odak", placeholder = "Boş bırak: hareketlerden otomatik")
                 Column {
                     OverlineText("Haftanın günü")
                     Spacer(Modifier.height(7.dp))

@@ -1070,6 +1070,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateDay(d: RoutineDayEntity) = viewModelScope.launch { repo.updateDay(d) }
+    fun moveDay(d: RoutineDayEntity, up: Boolean) = viewModelScope.launch { repo.moveDay(d, up) }
+
+    /** Günün hareketlerinden otomatik odak: set ağırlıklı en çok çalışan kas grupları ("Göğüs, Omuz, Kol"). */
+    fun autoFocus(dayId: Long): String {
+        val lib = exercises.value.associateBy { it.id }
+        val acc = LinkedHashMap<String, Int>()
+        allItems.value.filter { it.dayId == dayId && !it.isWarmup }.sortedBy { it.orderIndex }.forEach { i ->
+            val g = lib[i.exerciseId]?.muscleGroup ?: return@forEach
+            if (g == com.example.core.Muscles.CARDIO) return@forEach
+            acc[g] = (acc[g] ?: 0) + i.targetSets.coerceAtLeast(1)
+        }
+        val total = acc.values.sum().coerceAtLeast(1)
+        return acc.entries.sortedByDescending { it.value }.filter { it.value * 100 / total >= 15 }.take(3).joinToString(", ") { it.key }
+    }
     fun deleteDay(d: RoutineDayEntity) = viewModelScope.launch { repo.deleteDay(d) }
     fun duplicateDay(d: RoutineDayEntity) = viewModelScope.launch { repo.duplicateDay(d) }
 

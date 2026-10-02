@@ -102,6 +102,24 @@ fun weekdayShort(weekday: Int): String = when (weekday) {
     5 -> "Cum"; 6 -> "Cmt"; 7 -> "Paz"; else -> "—"
 }
 
+/**
+ * 2.37: Gün adından haftanın günü ("Salı - Push" → 2). Bulunamazsa 0.
+ * "Cumartesi" "Cuma"yı, "Pazartesi" "Pazar"ı içerdiği için uzun adlar önce aranır.
+ */
+fun weekdayFromName(name: String): Int {
+    val n = name.lowercase(TR)
+    val order = listOf("pazartesi" to 1, "cumartesi" to 6, "çarşamba" to 3, "carsamba" to 3, "perşembe" to 4, "persembe" to 4,
+        "salı" to 2, "sali" to 2, "cuma" to 5, "pazar" to 7)
+    for ((k, v) in order) {
+        val i = n.indexOf(k)
+        if (i < 0) continue
+        if (k == "cuma" && n.startsWith("cumartesi", i)) continue
+        if (k == "pazar" && n.startsWith("pazartesi", i)) continue
+        return v
+    }
+    return 0
+}
+
 /** Calendar.DAY_OF_WEEK -> 1..7 (Pazartesi = 1) */
 fun todayWeekday(): Int {
     val c = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)

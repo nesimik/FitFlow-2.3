@@ -69,6 +69,9 @@ interface FitDao {
     @Query("SELECT * FROM routine_days ORDER BY orderIndex ASC, id ASC")
     fun observeAllDays(): Flow<List<RoutineDayEntity>>
 
+    @Query("SELECT * FROM routine_days")
+    suspend fun getAllDaysOnce(): List<RoutineDayEntity>
+
     @Query("SELECT * FROM routine_days WHERE routineId = :routineId ORDER BY orderIndex ASC, id ASC")
     fun observeDays(routineId: Long): Flow<List<RoutineDayEntity>>
 

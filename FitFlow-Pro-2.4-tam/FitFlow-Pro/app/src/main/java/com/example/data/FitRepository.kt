@@ -45,6 +45,11 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
                 dao.insertExercises(missing)
             }
         }
+        // 2.37: haftanın günü seçilmemiş ama adında gün adı geçen günleri ("Salı - Push") o güne bağla
+        dao.getAllDaysOnce().filter { it.weekday !in 1..7 }.forEach { d ->
+            val wd = com.example.core.weekdayFromName(d.name)
+            if (wd in 1..7) dao.updateDay(d.copy(weekday = wd))
+        }
         if (dao.routineCount() == 0) {
             didImport = LegacyImporter(context, dao).importIfAvailable()
             if (!didImport) createDefaultRoutine()
@@ -161,6 +166,16 @@ class FitRepository(private val context: Context, private val dao: FitDao) {
         dao.insertDay(RoutineDayEntity(routineId = routineId, name = name, focus = focus, weekday = weekday, orderIndex = order))
 
     suspend fun updateDay(d: RoutineDayEntity) = dao.updateDay(d)
+
+    /** Program içinde günün sırasını bir yukarı/aşağı taşır (2.37). */
+    suspend fun moveDay(day: RoutineDayEntity, up: Boolean) {
+        val list = dao.daysForRoutine(day.routineId).sortedWith(compareBy({ it.orderIndex }, { it.id })).toMutableList()
+        val i = list.indexOfFirst { it.id == day.id }
+        val j = if (up) i - 1 else i + 1
+        if (i < 0 || j !in list.indices) return
+        java.util.Collections.swap(list, i, j)
+        list.forEachIndexed { k, d -> if (d.orderIndex != k) dao.updateDay(d.copy(orderIndex = k)) }
+    }
 
     suspend fun deleteDay(d: RoutineDayEntity) {
         dao.deleteItemsForDay(d.id)
