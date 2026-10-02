@@ -657,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.36" to "Kütüphaneye Dumbbell Calf Raise (Ayakta) eklendi (iki dambıl hacmi doğru sayılır); tek bacak calf raise tek dambıl sayılır.",
     "2.35" to "Program kartındaki set/ağırlık/tekrar seansa birebir aynı gelir (deload dahil): kart, seans açılışı ve seans içi öneri tek hesaptan beslenir.",
     "2.34" to "Gün düzenleyici: hareketleri sırala, sil (geri al), dokunup tüm ayarlarına ulaş. Seansta değişen hareket sırası programa da yazılır (geri alınabilir); süperset birlikte taşınır.",
     "2.33" to "Dambıl hacmi iki dambılla sayılır; seansta anında PR rozeti, geri al, kalan setlere uygula, süperset turları, hareket bazlı dinlenme, drop/tükeniş seti, hareket sırası, dinlenme duraklatma ve büyük sayaç; geçmişten seansı tekrarla.",

@@ -14,7 +14,7 @@ object VolumeRules {
 
     private val SINGLE = listOf(
         "one arm", "one-arm", "single arm", "single-arm", "tek kol", "tek el", "concentration", "kroc",
-        "pullover", "goblet", "swing", "unilateral", "1 arm", "1-arm"
+        "pullover", "goblet", "swing", "unilateral", "1 arm", "1-arm", "single leg", "single-leg", "tek bacak"
     )
 
     fun isDumbbellPair(name: String, equipment: String): Boolean {
