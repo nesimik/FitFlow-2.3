@@ -599,12 +599,23 @@ private fun SessionTopBar(
                     if (isDeload) Badge("Deload", Palette.violet)
                 }
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    "${formatDuration(elapsed)} · $done/$total set · ${formatTonnage(volume)}",
-                    style = MaterialTheme.typography.labelMedium.mono(),
-                    color = MaterialTheme.fit.muted,
-                    maxLines = 1
-                )
+                // 2.38: seans süresi büyük ve belirgin, set/hacim yanında küçük
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        formatDuration(elapsed),
+                        style = MaterialTheme.typography.headlineSmall.mono().copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.fit.accent,
+                        maxLines = 1
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "$done/$total set · ${formatTonnage(volume)}",
+                        style = MaterialTheme.typography.labelMedium.mono(),
+                        color = MaterialTheme.fit.muted,
+                        maxLines = 1,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
             }
             Box {
                 RoundIconButton(Icons.Default.MoreVert, MaterialTheme.fit.muted, 40.dp, Color.Transparent) { menu = true }

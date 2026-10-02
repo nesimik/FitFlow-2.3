@@ -657,6 +657,7 @@ private fun SecurityPage(vm: AppViewModel) {
 /* --------------------------------- Hakkında -------------------------------- */
 
 private val CHANGELOG = listOf(
+    "2.38" to "Kaslar sekmesinde kas detayındaki hareket dökümü yenilendi; seans süresi büyük; dinlenme çubuğu başka ekrandayken seansa döndürür, seanstayken büyük sayacı açar.",
     "2.37" to "Gün kartları yukarı/aşağı taşınabilir; odak hareketlerden otomatik dolar; adında gün adı geçen günler o güne bağlanır, Bugün kartı haftanın gününe göre gelir.",
     "2.36" to "Kütüphaneye Dumbbell Calf Raise (Ayakta) eklendi (iki dambıl hacmi doğru sayılır); tek bacak calf raise tek dambıl sayılır.",
     "2.35" to "Program kartındaki set/ağırlık/tekrar seansa birebir aynı gelir (deload dahil): kart, seans açılışı ve seans içi öneri tek hesaptan beslenir.",

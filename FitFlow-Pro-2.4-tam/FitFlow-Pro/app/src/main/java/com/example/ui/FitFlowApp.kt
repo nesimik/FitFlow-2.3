@@ -280,6 +280,7 @@ private fun AppScaffold(vm: AppViewModel) {
                     ) {
                         RestTimerBar(
                             state = rest,
+                            onWorkoutScreen = current?.startsWith(Routes.WORKOUT + "/") == true,
                             onAdjust = vm::adjustRest,
                             onToggle = vm::pauseResumeRest,
                             onStop = vm::stopRest,
@@ -389,9 +390,11 @@ private fun RestTimerBar(
     onAdjust: (Int) -> Unit,
     onToggle: () -> Unit,
     onStop: () -> Unit,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onWorkoutScreen: Boolean = false
 ) {
     // 2.33: duraklat / devam ve uzaktan okunur büyük geri sayım
+    // 2.38: seans ekranındayken dokunuş büyük sayacı açar; başka ekrandayken seansa döndürür.
     var big by remember { mutableStateOf(false) }
     if (big && !state.finished) BigRestDialog(state, onAdjust, onToggle, onStop) { big = false }
     // Tasarım 1d: koyu yüzey, soldan dolan ince ilerleme zemini, büyük mono sayaç, −15 / +15 / Atla.
@@ -423,7 +426,9 @@ private fun RestTimerBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable(enabled = !state.finished) { big = true }) {
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable {
+                    if (onWorkoutScreen && !state.finished) big = true else onClick?.invoke()
+                }) {
                     Text(
                         if (state.finished) "DİNLENME BİTTİ" else if (!state.running) "DURAKLATILDI" else "DİNLENME",
                         style = MaterialTheme.typography.labelSmall.overline(),

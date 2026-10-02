@@ -1009,7 +1009,7 @@ private fun MusclesTab(vm: AppViewModel, nav: NavHostController) {
                         Spacer(Modifier.height(14.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         Spacer(Modifier.height(12.dp))
-                        MuscleContributorsSection(key = key, contributors = contributors)
+                        MuscleContributorsSection(key = key, contributors = contributors) { id -> nav.navigate("${Routes.EXERCISE}/$id") }
                         if (load.status == LoadStatus.LOW || load.status == LoadStatus.BELOW) {
                             Spacer(Modifier.height(12.dp))
                             AccentButton(
@@ -1532,40 +1532,45 @@ private fun prTypeLabel(type: String) = when (type) {
 }
 
 @Composable
-private fun MuscleContributorsSection(key: String, contributors: List<MuscleContributor>) {
+private fun MuscleContributorsSection(key: String, contributors: List<MuscleContributor>, onOpen: (Long) -> Unit = {}) {
+    // 2.38: modern döküm — katkı payı çubuğu, birincil/destek şeridi, programda olup yapılmayanlar ayrı.
+    val done = contributors.filter { it.performedSetCount > 0 }.sortedByDescending { it.effectiveContribution }
+    val idle = contributors.filter { it.performedSetCount <= 0 }
+    val total = done.sumOf { it.effectiveContribution.toDouble() }.toFloat().coerceAtLeast(0.01f)
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.FitnessCenter,
-                contentDescription = null,
-                tint = MaterialTheme.fit.accent,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Beslendiği & Veri Aldığı Hareketler (${contributors.size})",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text("Bu kası çalıştıran hareketler", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            Text("set / hafta", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
         }
         Spacer(Modifier.height(4.dp))
-        Text(
-            "${MuscleMap.label(key)} kasına 1.0 birincil hedef veya 0.5 ikincil destek katkısı veren egzersizler:",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.fit.muted
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 10.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.fit.accent))
+            Spacer(Modifier.width(4.dp))
+            Text("birincil (1 set)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.size(width = 10.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(Palette.warning))
+            Spacer(Modifier.width(4.dp))
+            Text("destek (½ set)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
+        }
         Spacer(Modifier.height(10.dp))
-
-        if (contributors.isEmpty()) {
-            Text(
-                "Seçilen dönemde veya aktif programda bu kasa veri sağlayan hareket bulunamadı.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.fit.muted,
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                contributors.forEach { c ->
-                    MuscleContributorItem(c)
+        if (done.isEmpty() && idle.isEmpty()) {
+            Text("Bu dönemde ya da programda bu kası çalıştıran hareket yok.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted)
+        }
+        done.forEach { c -> MuscleContributorItem(c, c.effectiveContribution / total) { onOpen(c.exerciseId) } }
+        if (idle.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            OverlineText("Programda · bu dönemde yapılmadı")
+            Spacer(Modifier.height(4.dp))
+            idle.forEach { c ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onOpen(c.exerciseId) }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(width = 3.dp, height = 16.dp).clip(RoundedCornerShape(2.dp))
+                        .background((if (c.isPrimary) MaterialTheme.fit.accent else Palette.warning).copy(alpha = 0.4f)))
+                    Spacer(Modifier.width(10.dp))
+                    Text(c.exerciseName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.fit.muted, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (c.inRoutineDays.isNotEmpty()) Text(c.inRoutineDays.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted)
                 }
             }
         }
@@ -1573,92 +1578,37 @@ private fun MuscleContributorsSection(key: String, contributors: List<MuscleCont
 }
 
 @Composable
-private fun MuscleContributorItem(c: MuscleContributor) {
-    val context = LocalContext.current
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.fit.cardBorder.copy(alpha = 0.6f)),
-        modifier = Modifier.fillMaxWidth()
+private fun MuscleContributorItem(c: MuscleContributor, share: Float, onClick: () -> Unit) {
+    val stripe = if (c.isPrimary) MaterialTheme.fit.accent else Palette.warning
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.fit.elevated.copy(alpha = 0.45f)).clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Column(Modifier.padding(10.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    Text(
-                        c.exerciseName,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    IconButton(
-                        onClick = {
-                            val targetUrl = "https://www.youtube.com/results?search_query=${android.net.Uri.encode("${c.exerciseName} egzersizi yapılışı")}"
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
-                            try { context.startActivity(intent) } catch (_: Exception) {}
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.PlayCircle,
-                            contentDescription = "YouTube'da izle",
-                            tint = Color(0xFFFF0000),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                if (c.isPrimary) {
-                    Badge("1.0 Set (Birincil)", MaterialTheme.fit.success)
-                } else {
-                    Badge("0.5 Set (İkincil Destek)", MaterialTheme.fit.accent)
-                }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 3.dp, height = 30.dp).clip(RoundedCornerShape(2.dp)).background(stripe))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(c.exerciseName, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    listOfNotNull(
+                        "${c.performedSetCount} set",
+                        if (c.isPrimary) "birincil" else "destek",
+                        c.inRoutineDays.takeIf { it.isNotEmpty() }?.joinToString(", "),
+                        c.totalVolumeContribution.takeIf { it > 0f }?.let { formatTonnage(it) + "/hf" }
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.fit.muted, maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
-
-            Spacer(Modifier.height(6.dp))
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    if (c.performedSetCount > 0) {
-                        Text(
-                            "${c.performedSetCount} set yapıldı  →  +${c.effectiveContribution.trimNum()} etkin set/hafta",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (c.totalVolumeContribution > 0f) {
-                            Text(
-                                "Hacim katkısı: ${formatTonnage(c.totalVolumeContribution)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.fit.muted
-                            )
-                        }
-                    } else {
-                        Text(
-                            "Bu dönemde yapılmadı",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.fit.muted
-                        )
-                    }
-                }
-
-                if (c.inRoutineDays.isNotEmpty()) {
-                    Badge(
-                        "Program: ${c.inRoutineDays.joinToString(", ")}",
-                        MaterialTheme.fit.gold
-                    )
-                }
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text("+${c.effectiveContribution.trimNum().replace('.', ',')}", style = MaterialTheme.typography.titleSmall.mono().copy(fontWeight = FontWeight.SemiBold))
+                Text("%${(share * 100).roundToInt()}", style = MaterialTheme.typography.labelSmall.mono(), color = MaterialTheme.fit.muted)
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.fit.elevated)) {
+            Box(Modifier.fillMaxWidth(share.coerceIn(0.02f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(stripe))
         }
     }
 }
